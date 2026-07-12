@@ -1,5 +1,8 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } from 'electron';
+import { execSync } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
   createProjectAction,
@@ -12,36 +15,64 @@ import {
   runPipelineAction,
   saveArtifactAction,
   saveChannelVideoAction,
-  saveSettings,
   updateSettingsAction,
-} from './handlers.js';
+} from './handlers';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let mainWindow: BrowserWindow | null = null;
 
+function focusedWindow(): BrowserWindow | undefined {
+  return BrowserWindow.getFocusedWindow() ?? mainWindow ?? undefined;
+}
+
 function sendProgress(payload: { stage: string; message: string }) {
   mainWindow?.webContents.send('events:progress', payload);
+}
+
+function releaseDevPort(): void {
+  if (!process.env.ELECTRON_RENDERER_URL) return;
+  try {
+    execSync('lsof -ti :5173 | xargs kill -9 2>/dev/null || true', { stdio: 'ignore' });
+  } catch {
+    // ignore — port may already be free
+  }
+}
+
+function quitApplication(): void {
+  releaseDevPort();
+  app.quit();
 }
 
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1360,
     height: 900,
+    show: false,
+    title: 'ECPE',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, '../preload/preload.mjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
     },
   });
 
-  const devUrl = process.env.VITE_DEV_SERVER_URL;
-  if (devUrl) {
-    mainWindow.loadURL(devUrl);
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
+  const pageUrl = process.env.ELECTRON_RENDERER_URL;
+  if (pageUrl) {
+    mainWindow.loadURL(pageUrl);
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show();
+    mainWindow?.focus();
+  });
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
 }
 
 app.whenReady().then(() => {
@@ -52,7 +83,16 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  quitApplication();
+});
+
+app.on('before-quit', () => {
+  releaseDevPort();
+});
+
+ipcMain.handle('app:quit', async () => {
+  quitApplication();
+  return { ok: true };
 });
 
 ipcMain.handle('settings:get', async () => loadSettings());
@@ -60,12 +100,42 @@ ipcMain.handle('settings:save', async (_e, patch) => updateSettingsAction(patch)
 
 ipcMain.handle('project:create', async (_e, input) => createProjectAction(input));
 ipcMain.handle('project:info', async (_e, root: string) => getProjectInfoAction(root));
-ipcMain.handle('project:pickDirectory', async () => {
-  const result = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] });
-  return result.canceled ? null : result.filePaths[0];
+
+ipcMain.handle('project:pickDirectory', async (_e, startPath?: string) => {
+  const options: OpenDialogOptions = {
+    title: 'Choose folder',
+    properties: ['openDirectory', 'createDirectory'],
+    defaultPath: startPath || path.join(homedir(), 'Desktop'),
+  };
+  const win = focusedWindow();
+  const result = win
+    ? await dialog.showOpenDialog(win, options)
+    : await dialog.showOpenDialog(options);
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
 });
+
 ipcMain.handle('project:openFolder', async (_e, filePath: string) => {
   await shell.openPath(filePath);
+});
+
+ipcMain.handle('project:pickTextFile', async () => {
+  const options: OpenDialogOptions = {
+    title: 'Import document',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Text', extensions: ['md', 'txt', 'markdown'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  };
+  const win = focusedWindow();
+  const result = win
+    ? await dialog.showOpenDialog(win, options)
+    : await dialog.showOpenDialog(options);
+  if (result.canceled || result.filePaths.length === 0) return null;
+  const filePath = result.filePaths[0];
+  const content = await readFile(filePath, 'utf8');
+  return { path: filePath, content };
 });
 
 ipcMain.handle('stage:getArtifact', async (_e, root: string, filename: string) =>
@@ -87,10 +157,3 @@ ipcMain.handle('pipeline:run', async (_e, stageId: string, options) =>
 
 ipcMain.handle('manifest:exportCsv', async (_e, root: string) => exportManifestCsvAction(root));
 ipcMain.handle('llm:status', async () => llmStatusAction());
-
-ipcMain.handle('settings:saveRoot', async (_e, defaultProjectsRoot: string) => {
-  const settings = await loadSettings();
-  settings.defaultProjectsRoot = defaultProjectsRoot;
-  await saveSettings(settings);
-  return settings;
-});

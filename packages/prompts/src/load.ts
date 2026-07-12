@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Handlebars from 'handlebars';
+import { enrichWordBudgetContext } from './word-budget.js';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const GLOBAL_PROMPTS_ROOT = path.join(REPO_ROOT, 'prompts');
@@ -10,8 +11,18 @@ const GLOBAL_PROMPTS_ROOT = path.join(REPO_ROOT, 'prompts');
 export interface PromptContext {
   channel?: Record<string, unknown>;
   video?: Record<string, unknown>;
+  /** Creator-provided planning doc (roadmap, block outline, prep notes). */
+  sourceBrief?: string;
+  /** Markdown table injected when sourceBrief contains `[M:SS–M:SS]` blocks. */
+  wordBudgetTable?: string;
+  /** Sum of per-block narration word targets. */
+  totalNarrationWords?: number;
   artifacts?: Record<string, string>;
   revisionNotes?: string;
+  /** ISO date YYYY-MM-DD — injected automatically in buildPrompts. */
+  currentDate?: string;
+  currentYear?: number;
+  previousYear?: number;
 }
 
 async function exists(filePath: string): Promise<boolean> {
@@ -66,6 +77,8 @@ export async function buildPrompts(
   context: PromptContext,
   projectPath?: string,
 ): Promise<{ system: string; user: string }> {
+  enrichDateContext(context);
+  enrichWordBudgetContext(context);
   const system = await loadSystemPrompt(stageId, projectPath);
   let user = await renderUserPrompt(stageId, context, projectPath);
 
@@ -73,5 +86,30 @@ export async function buildPrompts(
     user += `\n\n---\nRevision notes from the creator:\n${context.revisionNotes.trim()}`;
   }
 
+  user = appendDateContextFooter(user, context);
+
   return { system, user };
+}
+
+function enrichDateContext(context: PromptContext): void {
+  if (context.currentDate && context.currentYear) return;
+  const now = new Date();
+  const year = now.getFullYear();
+  context.currentDate = now.toISOString().slice(0, 10);
+  context.currentYear = year;
+  context.previousYear = year - 1;
+}
+
+function appendDateContextFooter(user: string, context: PromptContext): string {
+  const y = context.currentYear!;
+  const py = context.previousYear!;
+  return `${user}
+
+---
+## Current date context
+Today is **${context.currentDate}**.
+- Prefer facts, product versions, and company case studies from **${y}** or **${py}**.
+- Do **not** present 2024-or-older stats as current without an explicit year label (e.g. "In 2024, Klarna reported…").
+- Actively look for fresher examples before falling back to older ones.
+- Historical examples (any era) are fine when labeled as history, not as "today's state of the industry".`;
 }

@@ -9,7 +9,7 @@ Your responsibility is to determine whether the research is technically complete
 Review the material using the following criteria.
 Technical Accuracy
 Incorrect statements
-Outdated information
+Outdated information — especially stats and case studies presented as current when they are from 2024 or earlier
 Imprecise terminology
 Completeness
 Missing concepts
@@ -32,6 +32,14 @@ Describe it.
 Explain why it matters.
 Recommend a specific improvement.
 Do not rewrite the research.
-Finish with a prioritized action list ordered by impact.
+Finish with a prioritized action list ordered by impact (max **10** items).
 
+## Length and format (strict)
+- **Maximum 1,800 words** for the entire review.
+- Bullet points only. Do **not** paste or paraphrase large chunks of the research.
+- For each issue: one-line problem + one-line fix. No essays.
+- Prioritized action list at the end: max 10 bullets, highest impact first.
 
+## Data freshness (mandatory)
+- Reject or flag research that treats 2024 (or older) examples as if they were current in the year provided in the user message.
+- Require explicit years on case studies; recommend searching for **2025–2026** announcements when available.

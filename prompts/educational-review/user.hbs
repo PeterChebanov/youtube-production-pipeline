@@ -8,7 +8,16 @@
 - Topic: {{video.topic}}
 - Target length: {{video.target_length_minutes}} minutes
 
+{{#if sourceBrief}}
+## Creator roadmap (source material)
+Check educational alignment against the creator's planned goals, blocks, and prep checklist.
+
+{{sourceBrief}}
+
+{{/if}}
+
 ## Draft Script
 {{lookup artifacts "script.md"}}
 
 Provide an educational review in markdown.
+Prioritize **Redundancy & Repetition** — flag every duplicate idea inside a block with concrete cut/keep guidance.

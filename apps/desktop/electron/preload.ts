@@ -5,7 +5,8 @@ contextBridge.exposeInMainWorld('ecpe', {
   saveSettings: (patch: unknown) => ipcRenderer.invoke('settings:save', patch),
   createProject: (input: unknown) => ipcRenderer.invoke('project:create', input),
   getProjectInfo: (root: string) => ipcRenderer.invoke('project:info', root),
-  pickDirectory: () => ipcRenderer.invoke('project:pickDirectory'),
+  pickDirectory: (startPath?: string) => ipcRenderer.invoke('project:pickDirectory', startPath),
+  pickTextFile: () => ipcRenderer.invoke('project:pickTextFile'),
   openFolder: (p: string) => ipcRenderer.invoke('project:openFolder', p),
   getArtifact: (root: string, filename: string) =>
     ipcRenderer.invoke('stage:getArtifact', root, filename),
@@ -18,6 +19,7 @@ contextBridge.exposeInMainWorld('ecpe', {
     ipcRenderer.invoke('pipeline:run', stageId, options),
   exportManifestCsv: (root: string) => ipcRenderer.invoke('manifest:exportCsv', root),
   llmStatus: () => ipcRenderer.invoke('llm:status'),
+  quitApp: () => ipcRenderer.invoke('app:quit'),
   onProgress: (cb: (payload: { stage: string; message: string }) => void) => {
     const listener = (_: unknown, payload: { stage: string; message: string }) => cb(payload);
     ipcRenderer.on('events:progress', listener);

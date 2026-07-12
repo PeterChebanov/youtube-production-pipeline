@@ -1,10 +1,11 @@
 import type { CompleteOptions, LlmProviderId } from './config.js';
+import { DEFAULT_LLM_PROVIDER } from './config.js';
 import { anthropicComplete } from './anthropic.js';
 import { geminiComplete } from './gemini.js';
 import { openaiComplete } from './openai.js';
 
 export async function complete(options: CompleteOptions): Promise<string> {
-  const provider: LlmProviderId = options.provider ?? 'openai';
+  const provider: LlmProviderId = options.provider ?? DEFAULT_LLM_PROVIDER;
 
   switch (provider) {
     case 'openai':

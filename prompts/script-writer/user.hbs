@@ -6,6 +6,22 @@
 - Title: {{video.title}}
 - Topic: {{video.topic}}
 - Target length: {{video.target_length_minutes}} minutes at {{video.words_per_minute}} WPM
+{{#if totalNarrationWords}}
+- Total narration budget: {{totalNarrationWords}} words (spoken text only)
+{{/if}}
+
+{{#if wordBudgetTable}}
+## Per-block narration word budget (mandatory)
+{{wordBudgetTable}}
+
+{{/if}}
+{{#if sourceBrief}}
+## Creator roadmap (source material)
+Honor the intended block structure, timecodes, on-screen actions, and narrative talking points where they fit the research. Do not treat bullets as final narration text.
+
+{{sourceBrief}}
+
+{{/if}}
 
 ## Research
 {{lookup artifacts "research.md"}}
@@ -14,3 +30,4 @@
 {{lookup artifacts "technical-review.md"}}
 
 Write the first draft script (script.md) based on the research and technical review.
+Self-check each block: no repeated full explanations of the same flow; one hook per block; no numbered future-video promises.

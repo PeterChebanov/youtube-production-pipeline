@@ -7,6 +7,22 @@
 - Title: {{video.title}}
 - Topic: {{video.topic}}
 - Target length: {{video.target_length_minutes}} minutes at {{video.words_per_minute}} WPM
+{{#if totalNarrationWords}}
+- Total narration budget: {{totalNarrationWords}} words (spoken text only)
+{{/if}}
+
+{{#if wordBudgetTable}}
+## Per-block narration word budget (mandatory — do not exceed)
+{{wordBudgetTable}}
+
+{{/if}}
+{{#if sourceBrief}}
+## Creator roadmap (source material)
+Apply hooks, CTAs, pacing, and on-camera/screen format from the plan where appropriate.
+
+{{sourceBrief}}
+
+{{/if}}
 
 ## Draft Script (base — preserve technical accuracy)
 {{lookup artifacts "script.md"}}
@@ -15,5 +31,5 @@
 {{lookup artifacts "educational-review.md"}}
 
 Write the final narration-ready script (final-script.md).
-Apply educational feedback where appropriate. Add YouTube engagement (hooks, pacing, curiosity) without reducing technical or educational quality.
+**Apply every educational-review redundancy fix.** Preserve narrative voice. Cut in-block repetition; end blocks with a short takeaway line, not a full re-walk. Remove specific video-number promises.
 Output only the final script in markdown.

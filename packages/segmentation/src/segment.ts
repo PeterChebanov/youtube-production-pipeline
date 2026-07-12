@@ -29,7 +29,7 @@ export function segmentScript(
   scriptMarkdown: string,
   wordsPerMinute: number,
 ): NarrationSegments {
-  const wpm = wordsPerMinute > 0 ? wordsPerMinute : 150;
+  const wpm = wordsPerMinute > 0 ? wordsPerMinute : 133;
   const lines = scriptMarkdown.split(/\r?\n/);
 
   let currentHeading = '';

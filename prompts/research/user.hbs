@@ -12,4 +12,12 @@
 Additional notes: {{video.notes}}
 {{/if}}
 
-Research this video topic thoroughly. Output markdown research notes.
+{{#if sourceBrief}}
+## Creator roadmap (source material)
+The creator provided a planning document (roadmap, block outline, prep notes, hooks). Treat it as **intent and structure** — validate facts, refine where needed, and research further. Narrative bullets are talking points, not verbatim script.
+
+{{sourceBrief}}
+
+{{/if}}
+
+Research this video topic thoroughly. Output **concise** markdown research notes (see length limits in system prompt).

@@ -2,6 +2,7 @@
 export const ARTIFACTS = {
   channel: 'channel.yaml',
   video: 'video.yaml',
+  sourceBrief: 'source-brief.md',
   research: 'research.md',
   technicalReview: 'technical-review.md',
   script: 'script.md',

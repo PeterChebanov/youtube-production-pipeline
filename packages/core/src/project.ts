@@ -43,12 +43,17 @@ export interface ProjectInfo {
 }
 
 export function slugify(name: string): string {
-  return name
+  const base = name
     .trim()
     .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 80);
+  if (base) return base;
+  const hash = Buffer.from(name.trim(), 'utf8').toString('base64url').slice(0, 12);
+  return `video-${hash}`;
 }
 
 export function resolveProjectPaths(rootDir: string, slug: string): ProjectPaths {
@@ -192,6 +197,16 @@ export async function readArtifact(projectRoot: string, filename: string): Promi
   return readFile(filePath, 'utf8');
 }
 
+export async function readSourceBrief(projectRoot: string): Promise<string | undefined> {
+  try {
+    const raw = await readArtifact(projectRoot, ARTIFACTS.sourceBrief);
+    const trimmed = raw.trim();
+    return trimmed || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function writeArtifact(
   projectRoot: string,
   filename: string,
@@ -206,5 +221,5 @@ export function defaultProjectsRoot(): string {
   if (fromEnv) {
     return fromEnv.replace(/^~/, process.env.HOME ?? '');
   }
-  return path.join(process.env.HOME ?? '', 'Videos', 'ECPE', 'projects');
+  return path.join(process.env.HOME ?? '', 'Desktop', 'ECPE', 'projects');
 }

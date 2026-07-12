@@ -6,7 +6,13 @@ import {
   ProjectStateSchema,
   parseYamlFile,
 } from '@ecpe/schemas';
-import { buildPrompts, type PromptContext } from '@ecpe/prompts';
+import {
+  buildPrompts,
+  auditScriptWordCounts,
+  expandContractionsForNarration,
+  stripScriptWordCountLines,
+  type PromptContext,
+} from '@ecpe/prompts';
 import { complete, loadEnv, type LlmProviderId } from '@ecpe/llm';
 import { segmentScript } from '@ecpe/segmentation';
 import {
@@ -17,7 +23,8 @@ import {
   type KnowledgeStageId,
 } from './artifacts.js';
 import { maybeArchiveArtifact } from './archive.js';
-import { openProject, readArtifact, writeArtifact } from './project.js';
+import { openProject, readArtifact, readSourceBrief, writeArtifact } from './project.js';
+import { reportProgress } from './progress.js';
 
 const LLM_STAGES = new Set<KnowledgeStageId>(
   KNOWLEDGE_STAGES.filter((s) => s !== 'segment'),
@@ -93,6 +100,9 @@ async function buildStageContext(
     context.video = parseYamlFile(raw, VideoSchema) as Record<string, unknown>;
   }
 
+  const sourceBrief = await readSourceBrief(projectPath);
+  if (sourceBrief) context.sourceBrief = sourceBrief;
+
   for (const key of STAGE_INPUTS[stageId]) {
     if (key === 'channel' || key === 'video') continue;
     const filename = ARTIFACTS[key];
@@ -160,12 +170,37 @@ export async function runStage(
   const context = await buildStageContext(projectPath, stageId, options.revisionNotes);
   const { system, user } = await buildPrompts(stageId, context, projectPath);
 
-  const content = await complete({
+  let content = await complete({
     provider: options.provider,
     model: options.model,
     system,
     user,
   });
+
+  if (stageId === 'script-writer' || stageId === 'youtube-editor') {
+    const wpm = Number((context.video as { words_per_minute?: number })?.words_per_minute) || 133;
+    let prepared = stripScriptWordCountLines(content);
+    prepared = expandContractionsForNarration(prepared);
+    const { content: audited, audits } = auditScriptWordCounts(
+      prepared,
+      wpm,
+      context.sourceBrief,
+    );
+    content = audited;
+    for (const a of audits) {
+      if (a.status === 'over' && a.target != null && a.max != null) {
+        reportProgress({
+          stage: stageId,
+          message: `Word audit — ${a.block}: ${a.words} words (target ${a.target}, max ${a.max}) ⚠️ OVER BUDGET`,
+        });
+      } else if (a.status === 'under' && a.target != null) {
+        reportProgress({
+          stage: stageId,
+          message: `Word audit — ${a.block}: ${a.words} words (target ${a.target}) — under target`,
+        });
+      }
+    }
+  }
 
   const outputFile = STAGE_OUTPUT[stageId];
   await maybeArchiveArtifact(projectPath, outputFile, stageId);

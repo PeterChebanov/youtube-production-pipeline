@@ -8,6 +8,14 @@
 - Topic: {{video.topic}}
 - Target length: {{video.target_length_minutes}} minutes
 
+{{#if sourceBrief}}
+## Creator roadmap (source material)
+Validate technical claims from this plan. Use block structure and prep notes as context.
+
+{{sourceBrief}}
+
+{{/if}}
+
 ## Research
 {{lookup artifacts "research.md"}}
 

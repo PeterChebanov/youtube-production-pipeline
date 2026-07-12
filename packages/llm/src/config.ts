@@ -42,6 +42,9 @@ export function getLlmConfig() {
 
 export type LlmProviderId = 'openai' | 'anthropic' | 'gemini';
 
+/** Default provider for all pipeline LLM stages when none is specified. */
+export const DEFAULT_LLM_PROVIDER: LlmProviderId = 'anthropic';
+
 export interface CompleteOptions {
   provider?: LlmProviderId;
   model?: string;

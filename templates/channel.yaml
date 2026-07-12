@@ -1,7 +1,7 @@
-name: "My Channel"
-description: "Educational content about AI, software engineering, and modern technology"
+name: "Per Aspera ad Astra"
+description: "Educational AI engineering for teams who want less routine work and more meaningful building. Automation handles repetitive tasks so people can focus on creative, high-judgment work."
 audience: "Software engineers and technical learners"
-tone: "Clear, practical, engaging"
+tone: "Clear, practical, engaging, dopamine-aware pacing, humane and collaborative"
 categories:
   - "AI & Machine Learning"
   - "Software Development"

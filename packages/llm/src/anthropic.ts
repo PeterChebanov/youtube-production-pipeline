@@ -9,6 +9,17 @@ function anthropicMessagesUrl(): string {
   return `${base}/v1/messages`;
 }
 
+function formatAnthropicError(status: number, body: string): string {
+  try {
+    const parsed = JSON.parse(body) as { error?: { message?: string; type?: string } };
+    const msg = parsed.error?.message?.trim();
+    if (msg) return `Anthropic API error: ${msg}`;
+  } catch {
+    // use raw body below
+  }
+  return `Anthropic HTTP ${status}: ${body}`;
+}
+
 export async function anthropicComplete(options: {
   system: string;
   user: string;
@@ -44,8 +55,8 @@ export async function anthropicComplete(options: {
     });
 
     if (!response.ok) {
-      const body = (await response.text()).slice(0, 400);
-      throw new Error(`Anthropic HTTP ${response.status}: ${body}`);
+      const body = (await response.text()).slice(0, 800);
+      throw new Error(formatAnthropicError(response.status, body));
     }
 
     const data = (await response.json()) as {
@@ -62,6 +73,13 @@ export async function anthropicComplete(options: {
       throw new Error(`Anthropic returned no text (block types: ${types.join(', ')})`);
     }
     return out;
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(
+        `Anthropic request timed out after ${cfg.httpTimeoutS}s. Increase HTTP_TIMEOUT_S in .env or run the stage alone.`,
+      );
+    }
+    throw err;
   } finally {
     clearTimeout(timeout);
   }

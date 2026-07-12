@@ -17,7 +17,7 @@ import {
   type ProductionStageId,
 } from './artifacts.js';
 import { maybeArchiveArtifact } from './archive.js';
-import { openProject, readArtifact, writeArtifact } from './project.js';
+import { openProject, readArtifact, readSourceBrief, writeArtifact } from './project.js';
 import { updateProjectState } from './stage.js';
 
 const PRODUCTION_LLM_STAGES = new Set<ProductionStageId>(['visual-plan']);
@@ -107,6 +107,9 @@ async function buildVisualPlanContext(
     projectPath,
     ARTIFACTS.narrationSegments,
   );
+
+  const sourceBrief = await readSourceBrief(projectPath);
+  if (sourceBrief) context.sourceBrief = sourceBrief;
 
   return context;
 }

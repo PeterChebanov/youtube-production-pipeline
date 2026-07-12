@@ -14,7 +14,7 @@ export const VideoSchema = z.object({
   title: z.string().min(1),
   topic: z.string().min(1),
   target_length_minutes: z.number().positive().default(10),
-  words_per_minute: z.number().positive().default(150),
+  words_per_minute: z.number().positive().default(133),
   notes: z.string().default(''),
   format: z.string().default('educational'),
 });

@@ -17,6 +17,7 @@ import {
   checkAnthropic,
   checkGemini,
   checkOpenAI,
+  DEFAULT_LLM_PROVIDER,
   getLlmConfig,
   loadEnv,
   type LlmProviderId,
@@ -60,7 +61,7 @@ program
   .description('Run a pipeline stage or composite command')
   .argument('<stageId>', `Stage id (${ALL_STAGES.join(', ')})`)
   .requiredOption('-p, --project <path>', 'Project directory')
-  .option('--provider <provider>', 'LLM provider (openai, anthropic, gemini)')
+  .option('--provider <provider>', `LLM provider (anthropic, openai, gemini; default: ${DEFAULT_LLM_PROVIDER})`)
   .option('--model <model>', 'Override model name')
   .option('-r, --revision <notes>', 'Revision notes appended to the user prompt')
   .option('--scene <sceneId>', 'Scene id for render-scene stage')
@@ -77,7 +78,7 @@ program
     ) => {
       const runOpts = {
         projectPath: opts.project,
-        provider: opts.provider as LlmProviderId | undefined,
+        provider: (opts.provider as LlmProviderId | undefined) ?? DEFAULT_LLM_PROVIDER,
         model: opts.model,
         revisionNotes: opts.revision,
         sceneId: opts.scene,
@@ -135,18 +136,18 @@ program
         loadEnv();
         const cfg = getLlmConfig();
 
+        if (cfg.anthropicApiKey) {
+          const result = await checkAnthropic();
+          console.log(`Anthropic (default): ${result.ok ? 'ok' : `FAIL — ${result.message}`}`);
+        } else {
+          console.log('Anthropic (default): skip (no ANTHROPIC_API_KEY)');
+        }
+
         if (cfg.openaiApiKey) {
           const result = await checkOpenAI();
           console.log(`OpenAI: ${result.ok ? 'ok' : `FAIL — ${result.message}`}`);
         } else {
           console.log('OpenAI: skip (no OPENAI_API_KEY)');
-        }
-
-        if (cfg.anthropicApiKey) {
-          const result = await checkAnthropic();
-          console.log(`Anthropic: ${result.ok ? 'ok' : `FAIL — ${result.message}`}`);
-        } else {
-          console.log('Anthropic: skip (no ANTHROPIC_API_KEY)');
         }
 
         if (cfg.geminiApiKey) {
