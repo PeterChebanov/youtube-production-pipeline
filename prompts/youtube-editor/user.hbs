@@ -1,0 +1,19 @@
+## Channel
+- Name: {{channel.name}}
+- Audience: {{channel.audience}}
+- Tone: {{channel.tone}}
+
+## Video
+- Title: {{video.title}}
+- Topic: {{video.topic}}
+- Target length: {{video.target_length_minutes}} minutes at {{video.words_per_minute}} WPM
+
+## Draft Script (base — preserve technical accuracy)
+{{lookup artifacts "script.md"}}
+
+## Educational Review (apply these recommendations)
+{{lookup artifacts "educational-review.md"}}
+
+Write the final narration-ready script (final-script.md).
+Apply educational feedback where appropriate. Add YouTube engagement (hooks, pacing, curiosity) without reducing technical or educational quality.
+Output only the final script in markdown.

@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "scenes": [
+    {
+      "scene_id": "scene-001",
+      "segment_ids": ["seg-001"],
+      "narration_excerpt": "Hello world from MCP.",
+      "start_timecode": "00:00",
+      "end_timecode": "00:02",
+      "duration_sec": 2,
+      "purpose": "Introduce MCP hub architecture",
+      "visual": "architecture_diagram",
+      "renderer": "mermaid",
+      "insert_hint": "Full-screen diagram during MCP intro",
+      "data": {
+        "source": "graph LR\n  Host[Host App] --> MCP[MCP Server]\n  MCP --> Tools[Tools]\n  MCP --> Models[LLM]"
+      }
+    },
+    {
+      "scene_id": "scene-002",
+      "segment_ids": ["seg-002"],
+      "narration_excerpt": "MCP connects models to tools.",
+      "start_timecode": "00:02",
+      "end_timecode": "00:04",
+      "duration_sec": 2,
+      "purpose": "Show minimal tool registration code",
+      "visual": "code_snippet",
+      "renderer": "code",
+      "insert_hint": "Cut to code overlay",
+      "data": {
+        "language": "typescript",
+        "code": "const server = new McpServer({ name: 'demo', version: '1.0.0' });\nserver.tool('search', async ({ query }) => ({ results: [] }));"
+      }
+    }
+  ]
+}

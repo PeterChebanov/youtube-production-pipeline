@@ -1,0 +1,25 @@
+## Channel
+- Name: {{channel.name}}
+- Description: {{channel.description}}
+- Audience: {{channel.audience}}
+- Tone: {{channel.tone}}
+{{#if channel.categories}}
+- Categories: {{#each channel.categories}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}
+{{/if}}
+
+## Video
+- Title: {{video.title}}
+- Topic: {{video.topic}}
+- Target length: {{video.target_length_minutes}} minutes
+{{#if video.notes}}
+- Notes: {{video.notes}}
+{{/if}}
+
+## Final Script
+{{lookup artifacts "final-script.md"}}
+
+## Narration Segments
+{{lookup artifacts "narration-segments.json"}}
+
+Create production-plan.json with scenes tied to segment_ids and timecodes.
+Choose the best renderer per scene. Output only valid JSON.

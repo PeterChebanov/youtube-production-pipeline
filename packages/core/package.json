@@ -1,0 +1,29 @@
+{
+  "name": "@ecpe/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@ecpe/llm": "workspace:*",
+    "@ecpe/production-engine": "workspace:*",
+    "@ecpe/prompts": "workspace:*",
+    "@ecpe/schemas": "workspace:*",
+    "@ecpe/segmentation": "workspace:*",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}
