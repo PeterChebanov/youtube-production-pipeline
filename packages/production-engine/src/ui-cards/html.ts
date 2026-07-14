@@ -2,6 +2,7 @@ import type { ProductionScene } from '@ecpe/schemas';
 import type { VisualTheme } from '../themes/index.js';
 import { buildBrandDocument } from '../themes/index.js';
 import { iconSvg, resolveIconName } from '../icons/index.js';
+import { SLIDE_TITLE_FONT_PX } from '../themes/slide-title.js';
 import {
   BRAND_ORANGE,
   BRAND_ORANGE_DEEP,
@@ -38,7 +39,7 @@ export function buildUiCardsHtml(
   const css = `
   ${animated ? revealAnimationCss() : ''}
   .cards-title {
-    font-size: 52px; font-weight: 700; text-align: center;
+    font-size: ${SLIDE_TITLE_FONT_PX}px; font-weight: 700; text-align: center;
     color: ${theme.textPrimary}; margin-bottom: 36px;
   }
   .cards-title::after {

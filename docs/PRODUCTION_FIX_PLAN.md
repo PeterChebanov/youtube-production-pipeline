@@ -417,3 +417,5 @@ packages/production-engine/src/excalidraw/render.ts     — frame-qa profile exc
 | 2026-07-14 | **Шаг 2 done:** Mermaid LR layout, decor grid, icon 102px +33px gap; D01/D02 P0–P1 |
 | 2026-07-14 | Mermaid icons: inline в label ноды (`labels.ts`), overlay удалён; `svg.flowchart` selector |
 | 2026-07-14 | `iconBadgeSvg`: один SVG-слой (круг+глиф), solid bg, shadow на circle only |
+| 2026-07-14 | **Шаг 4 done:** Excalidraw grid layout + rough.js frames/connectors, Excalifont, no glow; ep01 excalidraw 3/3 (003-b, 003-f, 004-b) |
+| 2026-07-14 | Excalidraw polish: overlap frame/content reveal, connector bands, accent fills, dot-grid, unified title scale (~100px) |

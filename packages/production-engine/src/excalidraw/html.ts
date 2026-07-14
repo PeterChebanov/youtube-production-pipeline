@@ -2,16 +2,33 @@ import type { ProductionScene } from '@ecpe/schemas';
 import type { VisualTheme } from '../themes/index.js';
 import { resolveTheme } from '../themes/index.js';
 import { BRAND_FRAME_CSS } from '../themes/background.js';
-import { countSketchBlocks, sparseScaleForCount } from './layout.js';
-import { revealAnimationCss } from '../animations/reveal.js';
+import {
+  buildSketchLayoutPlan,
+  countSketchBlocks,
+  parseSketchChain,
+  sparseScaleForCount,
+  type SketchConnectorPlacement,
+  type SketchConnectorBandPlacement,
+  type SketchElement,
+  type SketchNodePlacement,
+} from './layout.js';
+import { revealAnimationCss, pickRevealAnimation, revealItemStyle } from '../animations/reveal.js';
 import {
   createRevealStamp,
-  revealArrowAttrs,
   revealAttrs,
   revealBlockAttrs,
   type RevealStamp,
 } from '../animations/stamp.js';
-import { resolveIconName, sketchIconBadgeHtml, sketchIconSvg } from '../icons/index.js';
+import { resolveIconName, sketchIconBadgeHtml } from '../icons/index.js';
+import { sketchRoughScript } from './rough-script.js';
+import {
+  accentuateSketchHtml,
+  annotationTone,
+  shortenSketchLabel,
+} from './text-format.js';
+import { resolveSketchFillStyle } from './block-style.js';
+import { sketchBlockTimings, sketchConnectorDelay } from './reveal-timing.js';
+import { SLIDE_TITLE_BAND_MIN_PX, SLIDE_TITLE_FONT_PX } from '../themes/slide-title.js';
 
 function px(value: number, scale: number): string {
   return `${Math.round(value * scale)}px`;
@@ -30,34 +47,12 @@ function asStringArray(v: unknown): string[] {
   return v.map((x) => String(x));
 }
 
-interface SpecElement {
-  type: string;
-  label?: string;
-  text?: string;
+interface SpecElement extends SketchElement {
   steps?: string[];
   total?: string;
   examples?: string[];
-  annotation?: string;
-  icon?: string;
-  position?: string;
-  id?: string;
-  from?: string;
-  to?: string;
+  text?: string;
 }
-
-interface ChainItem {
-  box: SpecElement;
-  arrowLabel?: string;
-}
-
-type SketchLayoutKind =
-  | 'comparison_horizontal'
-  | 'decision_tree'
-  | 'flow_vertical'
-  | 'box_chain'
-  | 'u_shape'
-  | 'compact_vertical'
-  | 'pipeline_horizontal';
 
 function parseElements(data: Record<string, unknown>): SpecElement[] {
   const raw = data.elements;
@@ -98,487 +93,331 @@ function humanizeTitle(scene: ProductionScene): string {
     .join(' ');
 }
 
-function wordCount(elements: SpecElement[]): number {
-  return elements
-    .filter((e) => e.type === 'box' || e.type === 'workflow')
-    .reduce((n, b) => n + (b.label || b.text || '').split(/\s+/).filter(Boolean).length, 0);
-}
-
-
-function resolveSketchLayout(layout: string, elements: SpecElement[]): SketchLayoutKind {
-  const normalized = layout.trim().toLowerCase();
-  if (normalized === 'comparison_horizontal' || normalized === 'comparison_two_column') {
-    return 'comparison_horizontal';
-  }
-  if (normalized === 'flow_vertical' || normalized === 'flowchart_vertical') {
-    return autoPickChainLayout(elements);
-  }
-  if (normalized === 'u_shape' || normalized === 'p_shape') return 'u_shape';
-  if (normalized === 'compact_vertical' || normalized === 'fade_stack') return 'compact_vertical';
-  if (normalized === 'decision_tree') {
-    if (elements.some((e) => e.type === 'question' || e.type === 'branch_yes' || e.type === 'branch_no')) {
-      return 'decision_tree';
-    }
-    return autoPickChainLayout(elements);
-  }
-  if (normalized === 'pipeline_horizontal') return 'pipeline_horizontal';
-  if (elements.some((e) => e.type === 'flow')) return 'comparison_horizontal';
-  if (elements.some((e) => e.type === 'question')) return 'decision_tree';
-  if (elements.some((e) => e.type === 'box' || e.type === 'workflow')) return autoPickChainLayout(elements);
-  return 'pipeline_horizontal';
-}
-
-function parseBoxChain(elements: SpecElement[]): ChainItem[] {
-  const items: ChainItem[] = [];
-  let pendingArrow: string | undefined;
-
-  for (const el of elements) {
-    if (el.type === 'arrow' || el.type === 'connector') {
-      pendingArrow = el.label || el.text || pendingArrow;
-      continue;
-    }
-    if (el.type === 'box' || el.type === 'workflow') {
-      items.push({ box: el, arrowLabel: pendingArrow });
-      pendingArrow = undefined;
-    }
-  }
-  return items;
-}
-
-function autoPickChainLayout(elements: SpecElement[]): 'flow_vertical' | 'u_shape' | 'compact_vertical' {
-  const chain = parseBoxChain(elements);
-  const count = chain.length;
-  const words = wordCount(elements);
-  if (count <= 4 && words <= 32) return 'flow_vertical';
-  if (count <= 6) return 'u_shape';
-  return 'compact_vertical';
-}
-
-function shapeForLabel(label: string, index: number): string {
-  const len = label.length;
-  if (len > 48) return '';
-  if (len > 30) return ' shape-pill';
-  if (len <= 22 && index % 4 === 2) return ' shape-circle';
-  if (len <= 18 && index % 6 === 4) return ' shape-diamond';
-  return index % 3 === 1 ? ' shape-pill' : '';
-}
-
-function boxIconHtml(box: SpecElement, sceneId: string, index: number): string {
+function boxIconHtml(box: SketchElement, sceneId: string, index: number, size: number): string {
   const name = resolveIconName({
     explicit: box.icon,
     variant: 'sketch',
     seed: `${sceneId}:box:${index}`,
     textParts: [box.label, box.text, box.annotation],
   });
-  return sketchIconBadgeHtml(name, 36);
+  return sketchIconBadgeHtml(name, size);
 }
 
-function renderSketchBox(
+function sketchRevealInnerAttrs(
   stamp: RevealStamp,
-  box: SpecElement,
-  sceneId: string,
-  index: number,
-  extraClass = '',
+  blockIndex: number,
+  className: string,
 ): string {
-  const label = box.label || box.text || `Step ${index + 1}`;
-  const shape = shapeForLabel(label, index);
+  if (!stamp.enabled) return `class="${className}"`;
+  const { contentDelay } = sketchBlockTimings(blockIndex);
+  const anim = pickRevealAnimation(stamp.sceneId, blockIndex * 2);
+  stamp.blockIndex = Math.max(stamp.blockIndex, blockIndex + 1);
+  stamp.index = Math.max(stamp.index, blockIndex * 2 + 1);
+  return `class="${className} reveal-item reveal-${anim}" style="${revealItemStyle(anim, contentDelay)}"`;
+}
+
+function renderSketchNode(
+  stamp: RevealStamp,
+  placement: SketchNodePlacement,
+  sceneId: string,
+  scale: number,
+  layoutKind: string,
+  total: number,
+  animated: boolean,
+): string {
+  const box = placement.box;
+  const rawLabel = box.label || box.text || `Step ${placement.index + 1}`;
+  const label = accentuateSketchHtml(escapeHtml(shortenSketchLabel(rawLabel)));
+  const annTone = box.annotation
+    ? annotationTone(rawLabel, box.annotation)
+    : 'neutral';
   const ann = box.annotation
-    ? `<div class="sketch-annotation">${escapeHtml(box.annotation)}</div>`
+    ? `<div class="sketch-annotation sketch-annotation-${annTone}">${accentuateSketchHtml(escapeHtml(shortenSketchLabel(box.annotation)))}</div>`
     : '';
-  return `<div ${revealBlockAttrs(stamp, `sketch-box${shape} ${extraClass}`.trim())}>
-    <div class="sketch-box-head">
-      <div class="sketch-box-icon">${boxIconHtml(box, sceneId, index)}</div>
-      <div class="sketch-box-label">${escapeHtml(label)}</div>
+  const fillStyle = resolveSketchFillStyle(box, placement.index, total, layoutKind);
+  const { frameDelay } = sketchBlockTimings(placement.index);
+  const style = `left:${placement.leftPct.toFixed(3)}%;top:${placement.topPct.toFixed(3)}%;width:${placement.widthPct.toFixed(3)}%;height:${placement.heightPct.toFixed(3)}%`;
+  const iconSize = Math.round(48 * scale);
+  const innerAttrs = animated
+    ? sketchRevealInnerAttrs(stamp, placement.index, 'sketch-node-inner')
+    : 'class="sketch-node-inner"';
+  const frameDelayAttr = animated ? ` data-frame-delay="${frameDelay.toFixed(3)}"` : '';
+  return `<div class="sketch-node" data-node="${placement.index}" data-fill="${fillStyle}"${frameDelayAttr} style="${style}">
+    <div ${innerAttrs}>
+      <div class="sketch-box-head">
+        <div class="sketch-box-icon">${boxIconHtml(box, sceneId, placement.index, iconSize)}</div>
+        <div class="sketch-box-label">${label}</div>
+      </div>
+      ${ann}
     </div>
-    ${ann}
   </div>`;
 }
 
-function renderArrowStep(
+function connectorPayload(
+  connectors: SketchConnectorPlacement[],
   stamp: RevealStamp,
-  label?: string,
-  direction: 'down' | 'right' | 'up' = 'down',
 ): string {
-  const sym = direction === 'down' ? '↓' : direction === 'up' ? '↑' : '→';
-  const caption = label ? `<span class="chain-arrow-caption">${escapeHtml(label)}</span>` : '';
-  return `<div ${revealArrowAttrs(stamp, `chain-arrow chain-arrow-${direction}`)}>
-    <span class="chain-arrow-glyph">${sym}</span>${caption}
-  </div>`;
+  const payload = connectors.map((c) => {
+    const stepIndex = c.fromIndex * 2 + 1;
+    stamp.index = Math.max(stamp.index, stepIndex + 2);
+    return {
+      from: c.fromIndex,
+      to: c.toIndex,
+      dir: c.direction,
+      label: c.label ?? '',
+      delay: sketchConnectorDelay(c.fromIndex),
+    };
+  });
+  return JSON.stringify(payload);
 }
 
-function renderTradeoffRow(boxes: SpecElement[], stamp: RevealStamp, sceneId: string, startIndex: number): string {
-  const cols = boxes
-    .map((box, i) => renderSketchBox(stamp, box, sceneId, startIndex + i, 'tradeoff-col'))
-    .join('');
-  return `<div class="tradeoff-row">${cols}</div>`;
-}
-
-function renderFlowVertical(
-  elements: SpecElement[],
-  stamp: RevealStamp,
-  sceneId: string,
+function renderConnectorBand(
+  band: SketchConnectorBandPlacement,
+  animated: boolean,
 ): string {
-  const chain = parseBoxChain(elements);
-  if (chain.length === 0) return '';
-
-  const tradeoffCandidates = chain.filter((c) => /lower-(left|right)|trade|✓|✗/i.test(c.box.position || c.box.label || ''));
-  const useTradeoffRow = tradeoffCandidates.length >= 2;
-  const mainChain = useTradeoffRow ? chain.slice(0, -2) : chain;
-  const tradeoffBoxes = useTradeoffRow ? chain.slice(-2).map((c) => c.box) : [];
-
-  const mainHtml = mainChain
-    .map((item, i) => {
-      const align = i % 2 === 0 ? 'align-left' : 'align-right';
-      const arrow =
-        i < mainChain.length - 1 || tradeoffBoxes.length > 0
-          ? renderArrowStep(stamp, item.arrowLabel, 'down')
-          : '';
-      return `<div class="chain-item ${align}">${renderSketchBox(stamp, item.box, sceneId, i)}${arrow}</div>`;
-    })
-    .join('');
-
-  const tradeoffHtml = tradeoffBoxes.length > 0 ? renderTradeoffRow(tradeoffBoxes, stamp, sceneId, mainChain.length) : '';
-  const standaloneAnn = elements.find((e) => e.type === 'annotation');
-  const annHtml = standaloneAnn?.text
-    ? `<div ${revealAttrs(stamp, 'annotation')}>${escapeHtml(standaloneAnn.text)}</div>`
+  const style = `left:${band.leftPct.toFixed(3)}%;top:${band.topPct.toFixed(3)}%;width:${band.widthPct.toFixed(3)}%;height:${band.heightPct.toFixed(3)}%`;
+  const label = band.label
+    ? `<div class="sketch-band-label">${escapeHtml(band.label)}</div>`
     : '';
-
-  return `<div class="chain-canvas chain-canvas-zigzag">${mainHtml}${tradeoffHtml}${annHtml}</div>`;
-}
-
-function renderCompactVertical(
-  elements: SpecElement[],
-  stamp: RevealStamp,
-  sceneId: string,
-): string {
-  const chain = parseBoxChain(elements);
-  if (chain.length === 0) return '';
-
-  const items = chain
-    .map((item, i) => {
-      const arrow = i < chain.length - 1 ? renderArrowStep(stamp, item.arrowLabel, 'down') : '';
-      return `<div class="chain-item chain-item-center">${renderSketchBox(stamp, item.box, sceneId, i)}${arrow}</div>`;
-    })
-    .join('');
-
-  return `<div class="chain-canvas chain-canvas-compact">${items}</div>`;
-}
-
-function renderUShape(
-  elements: SpecElement[],
-  stamp: RevealStamp,
-  sceneId: string,
-): string {
-  const chain = parseBoxChain(elements);
-  if (chain.length === 0) return '';
-
-  const splitAt = Math.ceil(chain.length / 2);
-  const leftChain = chain.slice(0, splitAt);
-  const rightChain = [...chain.slice(splitAt)].reverse();
-
-  const renderCol = (col: ChainItem[], direction: 'down' | 'up', offset: number) => {
-    return col
-      .map((item, i) => {
-        const idx = offset + i;
-        const arrow =
-          i < col.length - 1 ? renderArrowStep(stamp, item.arrowLabel, direction) : '';
-        const hero = chain.length >= 5 && idx === Math.floor(chain.length / 2) ? ' sketch-box-hero' : '';
-        return `<div class="chain-item chain-item-center">${renderSketchBox(stamp, item.box, sceneId, idx, hero.trim())}${arrow}</div>`;
-      })
-      .join('');
-  };
-
-  const bridge =
-    rightChain.length > 0
-      ? `<div class="u-bridge">${renderArrowStep(stamp, undefined, 'right')}</div>`
-      : '';
-
-  return `<div class="u-shape-canvas">
-    <div class="u-col u-col-left">${renderCol(leftChain, 'down', 0)}</div>
-    ${bridge}
-    <div class="u-col u-col-right">${renderCol(rightChain, 'up', splitAt)}</div>
+  const dirCls = band.direction === 'right' ? 'sketch-connector-band-h' : 'sketch-connector-band-v';
+  const delay = sketchConnectorDelay(band.fromIndex);
+  const attrs = animated
+    ? `class="sketch-connector-band ${dirCls} reveal-item" style="animation: sketchConnShow 0.5s ease ${delay}s forwards; opacity:0; ${style}"`
+    : `class="sketch-connector-band ${dirCls}" style="${style}"`;
+  return `<div ${attrs} data-conn-from="${band.fromIndex}" data-dir="${band.direction}">
+    <div class="sketch-band-label-zone">${label}</div>
+    <div class="sketch-band-arrow-zone" aria-hidden="true"></div>
   </div>`;
 }
 
-function renderBoxChain(elements: SpecElement[], stamp: RevealStamp, sceneId: string, kind: SketchLayoutKind): string {
-  switch (kind) {
-    case 'u_shape':
-      return renderUShape(elements, stamp, sceneId);
-    case 'compact_vertical':
-      return renderCompactVertical(elements, stamp, sceneId);
-    case 'flow_vertical':
-    case 'box_chain':
-    default:
-      return renderFlowVertical(elements, stamp, sceneId);
+function renderGridCanvas(
+  layout: string,
+  elements: SpecElement[],
+  stamp: RevealStamp,
+  sceneId: string,
+  scale: number,
+  animated: boolean,
+): string {
+  const plan = buildSketchLayoutPlan(layout, elements);
+  type CanvasItem = { top: number; html: string };
+  const items: CanvasItem[] = [];
+
+  for (const n of plan.nodes) {
+    items.push({
+      top: n.topPct,
+      html: renderSketchNode(stamp, n, sceneId, scale, plan.kind, plan.nodes.length, animated),
+    });
   }
+  for (const b of plan.bands) {
+    items.push({ top: b.topPct, html: renderConnectorBand(b, animated) });
+  }
+  items.sort((a, b) => a.top - b.top);
+
+  const connectorsJson = connectorPayload(plan.connectors, stamp);
+
+  return `<div class="sketch-grid-canvas" data-animated="${animated ? 'true' : 'false'}" data-connectors='${connectorsJson.replace(/'/g, '&#39;')}'>
+    ${items.map((i) => i.html).join('')}
+    <svg class="sketch-overlay" aria-hidden="true"></svg>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/roughjs@4.6.6/bundled/rough.js"></script>
+  <script>${sketchRoughScript()}</script>`;
 }
 
 function buildSketchCss(theme: VisualTheme, scale = 1, animated = false): string {
+  const bodyLabel = Math.round(38 * scale);
+  const bodyAnn = Math.round(27 * scale);
+  const connLabel = Math.round(22 * scale);
   return `
   ${animated ? revealAnimationCss() : ''}
   ${BRAND_FRAME_CSS}
+  @font-face {
+    font-family: 'Excalifont';
+    src: url('https://excalidraw.nyc3.cdn.digitaloceanspaces.com/fonts/Excalifont-Regular.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+  }
+  body.sketch-mode .sketch-dot-layer {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image: radial-gradient(circle, rgba(210, 220, 240, 0.16) 1.2px, transparent 1.2px);
+    background-size: 20px 20px;
+  }
+  body.sketch-mode .brand-layer { z-index: 0; }
+  body.sketch-mode .brand-layer::after { z-index: 1; }
+  body.sketch-mode .frame { z-index: 2; }
+  @keyframes sketchFrameDraw { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes sketchConnShow { from { opacity: 0; } to { opacity: 1; } }
   .sketch-content {
     display: flex; flex-direction: column;
-    justify-content: flex-start; align-items: center;
-    flex: 1; min-height: 0;
-    width: 100%; gap: ${px(16, scale)};
+    justify-content: flex-start; align-items: stretch;
+    flex: 1; min-height: 0; width: 100%; gap: ${px(12, scale)};
   }
   .sketch-title-band {
-    flex-shrink: 0;
-    width: 100%;
-    min-height: ${px(88, scale)};
-    margin-bottom: ${px(12, scale)};
-    padding-bottom: ${px(8, scale)};
+    flex-shrink: 0; width: 100%; padding: 0 9%;
+    min-height: ${SLIDE_TITLE_BAND_MIN_PX}px; margin-bottom: ${px(8, scale)};
   }
   h1.title {
-    font-family: 'Segoe UI', system-ui, sans-serif;
-    font-size: ${px(44, scale)}; font-weight: 700; margin: 0;
-    color: ${theme.sketchTitle};
-    letter-spacing: -0.02em;
+    font-family: 'Excalifont', 'Segoe Print', cursive;
+    font-size: ${SLIDE_TITLE_FONT_PX}px; font-weight: 400; margin: 0;
+    color: ${theme.sketchTitle}; letter-spacing: 0.01em; line-height: 1.1;
   }
-  .sketch-body {
-    flex: 1; min-height: 0; width: 100%;
-    display: flex; flex-direction: column; justify-content: center;
+  .sketch-body { flex: 1; min-height: 0; width: 100%; position: relative; }
+  .sketch-grid-canvas {
+    position: relative; width: 100%; height: 100%; min-height: ${px(620, scale)};
   }
-  .cols { display: flex; gap: ${px(32, scale)}; align-items: stretch; flex: 1; min-height: 0; width: 100%; justify-content: center; }
-  .col { flex: 1; display: flex; flex-direction: column; justify-content: center; max-width: 48%; }
-  .flow-card {
-    border: 2px solid ${theme.cardBorder};
-    border-radius: ${px(20, scale)};
-    padding: ${px(28, scale)} ${px(32, scale)};
-    background: rgba(10, 18, 35, 0.75);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
-    margin-bottom: ${px(16, scale)};
+  .sketch-node {
+    position: absolute; box-sizing: border-box; display: flex;
+    align-items: stretch; justify-content: stretch; overflow: hidden;
   }
-  .flow-card.alt { border-color: ${theme.accent}; }
-  .flow-label {
-    font-size: ${px(30, scale)}; font-weight: 700; margin-bottom: ${px(12, scale)};
-    color: ${theme.accent};
-  }
-  .flow-step {
-    font-size: ${px(24, scale)}; line-height: 1.4; padding: ${px(8, scale)} 0 ${px(8, scale)} ${px(20, scale)};
-    border-left: 4px solid ${theme.sketchSilver}; margin: ${px(6, scale)} 0;
-    color: ${theme.textPrimary};
-  }
-  .flow-total { font-size: ${px(26, scale)}; font-weight: 700; margin-top: ${px(14, scale)}; color: ${theme.accentAlt}; }
-  .annotation {
-    border: 2px dashed ${theme.sketchGold}; border-radius: ${px(16, scale)}; padding: ${px(20, scale)} ${px(26, scale)};
-    font-size: ${px(24, scale)}; line-height: 1.4;
-    background: rgba(240, 193, 75, 0.08); flex-shrink: 0;
-    white-space: pre-line; color: ${theme.textPrimary}; text-align: center; max-width: 90%;
-  }
-  .decision-layout {
-    display: flex; flex-direction: column; gap: ${px(32, scale)};
-    flex: 1; justify-content: center; min-height: 0; width: 100%;
-  }
-  .question-banner {
-    align-self: center; max-width: ${px(860, scale)}; width: 100%;
-    padding: ${px(24, scale)} ${px(34, scale)}; border: 3px solid ${theme.sketchGold};
-    border-radius: ${px(22, scale)}; background: rgba(8, 14, 30, 0.72);
-    text-align: center; font-size: ${px(26, scale)}; line-height: 1.45;
-    flex-shrink: 0;
-  }
-  .question-icon { color: ${theme.sketchGold}; font-size: ${px(20, scale)}; margin-bottom: ${px(10, scale)}; letter-spacing: 4px; }
-  .branches-row { display: flex; gap: ${px(32, scale)}; flex: 1; align-items: stretch; min-height: 0; width: 100%; justify-content: center; }
-  .branch {
-    flex: 1; max-width: 46%; padding: ${px(20, scale)} ${px(24, scale)}; border-radius: ${px(18, scale)};
-    background: rgba(10, 18, 35, 0.65);
-    border: 1px solid ${theme.cardBorder};
-  }
-  .branch-label { font-size: ${px(28, scale)}; font-weight: 700; margin-bottom: ${px(12, scale)}; }
-  .branch-yes { border-color: ${theme.sketchAccentGreen}; }
-  .branch-yes .branch-label { color: ${theme.sketchAccentGreen}; }
-  .branch-no { border-color: ${theme.sketchAccentBlue}; }
-  .branch-no .branch-label { color: ${theme.sketchAccentBlue}; }
-  .example {
-    font-size: ${px(22, scale)}; line-height: 1.4; padding: ${px(8, scale)} 0 ${px(8, scale)} ${px(16, scale)};
-    border-left: 3px solid ${theme.sketchSilver};
-  }
-  .split-sketch {
-    display: flex; flex: 1; gap: ${px(40, scale)}; align-items: center; justify-content: center;
-    width: 100%; min-height: 0;
-  }
-  .chain-canvas {
-    flex: 1; display: flex; flex-direction: column; gap: ${px(14, scale)};
-    justify-content: center; min-height: 0; width: 100%;
-  }
-  .chain-canvas-zigzag { max-width: 92%; align-self: center; }
-  .chain-canvas-compact { gap: ${px(10, scale)}; max-width: 78%; align-self: center; }
-  .chain-item { display: flex; flex-direction: column; gap: ${px(10, scale)}; max-width: 100%; }
-  .chain-item.align-left { align-self: flex-start; margin-left: 4%; max-width: 88%; }
-  .chain-item.align-right { align-self: flex-end; margin-right: 4%; max-width: 88%; }
-  .chain-item-center { align-self: center; max-width: 86%; }
-  .u-shape-canvas {
-    flex: 1; display: flex; gap: ${px(36, scale)}; align-items: stretch;
-    justify-content: center; width: 100%; min-height: 0; padding: 0 ${px(24, scale)};
-  }
-  .u-col {
-    flex: 1; max-width: 42%; display: flex; flex-direction: column;
-    gap: ${px(12, scale)}; justify-content: center;
-  }
-  .u-col-right { justify-content: flex-end; }
-  .u-bridge {
-    flex: 0 0 ${px(48, scale)}; display: flex; align-items: flex-end;
-    justify-content: center; padding-bottom: ${px(24, scale)};
-  }
-  .sketch-box-hero { border-color: ${theme.accent}; box-shadow: 0 0 28px rgba(251,146,60,0.22); }
-  .chain-arrow {
-    display: flex; flex-direction: column; align-items: center; gap: ${px(4, scale)};
-    color: ${theme.sketchGold}; font-size: ${px(30, scale)}; font-weight: 700;
-    margin: ${px(4, scale)} 0;
-  }
-  ${animated ? `.chain-arrow.reveal-item { opacity: 0 !important; }` : ''}
-  .chain-arrow-caption { font-size: ${px(18, scale)}; color: ${theme.textSecondary}; font-weight: 500; }
-  .sketch-box {
-    border: 2px solid ${theme.cardBorder}; border-radius: ${px(18, scale)};
-    padding: ${px(20, scale)} ${px(26, scale)};
-    font-size: ${px(26, scale)}; background: rgba(10, 18, 35, 0.82);
-    text-align: left; color: ${theme.textPrimary};
-    display: flex; flex-direction: column; gap: ${px(8, scale)};
-    box-shadow: 0 8px 22px rgba(0,0,0,0.3);
-    word-break: break-word; overflow-wrap: anywhere;
-    min-width: ${px(280, scale)}; max-width: 100%;
-  }
-  .sketch-box.shape-pill { border-radius: 999px; border-color: ${theme.accent}; text-align: center; }
-  .sketch-box.shape-circle {
-    border-radius: 50%; min-width: ${px(220, scale)}; min-height: ${px(220, scale)};
-    max-width: ${px(340, scale)}; aspect-ratio: 1;
-    align-items: center; justify-content: center; text-align: center;
-    border-color: ${theme.sketchAccentBlue}; padding: ${px(28, scale)};
-  }
-  .sketch-box.shape-diamond {
-    clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
-    padding: ${px(40, scale)} ${px(48, scale)}; min-width: ${px(240, scale)};
-    border-color: ${theme.sketchGold}; text-align: center;
+  .sketch-node-inner {
+    width: 100%; height: 100%; display: flex; flex-direction: column;
+    justify-content: center; gap: ${px(8, scale)};
+    padding: ${px(14, scale)} ${px(18, scale)}; box-sizing: border-box;
+    font-family: 'Excalifont', 'Segoe Print', cursive;
+    color: ${theme.textPrimary}; background: transparent; border: none;
+    box-shadow: none;
   }
   .sketch-box-head {
     display: flex; align-items: center; gap: ${px(12, scale)}; width: 100%;
   }
-  .sketch-box-icon { line-height: 0; opacity: 1; flex-shrink: 0; }
-  .sketch-box-label { flex: 1; text-align: center; font-weight: 600; line-height: 1.35; }
-  .sketch-annotation { font-size: ${px(20, scale)}; color: ${theme.textSecondary}; line-height: 1.35; }
-  .tradeoff-row { display: flex; gap: ${px(24, scale)}; justify-content: center; width: 100%; margin-top: ${px(8, scale)}; }
-  .tradeoff-col { flex: 1; max-width: 46%; }
-  .pipeline { display: flex; align-items: center; gap: ${px(14, scale)}; flex-wrap: wrap; justify-content: center; flex: 1; width: 100%; }
-  .pipe-box {
-    border: 2px solid ${theme.cardBorder}; border-radius: ${px(18, scale)}; padding: ${px(20, scale)} ${px(28, scale)};
-    font-size: ${px(26, scale)}; background: rgba(10, 18, 35, 0.75); min-width: ${px(200, scale)}; text-align: center;
-    color: ${theme.textPrimary}; word-break: break-word;
+  .sketch-box-icon { line-height: 0; flex-shrink: 0; }
+  .sketch-box-label {
+    flex: 1; text-align: left; font-size: ${bodyLabel}px;
+    font-weight: 400; line-height: 1.32;
   }
-  body.layout-compact h1.title { font-size: ${px(36, scale)}; }
-  body.layout-compact .flow-label, body.layout-compact .branch-label { font-size: ${px(24, scale)}; }
-  body.layout-compact .chain-canvas { gap: ${px(8, scale)}; }
-  body.layout-compact .sketch-box { font-size: ${px(20, scale)}; padding: ${px(14, scale)} ${px(18, scale)}; }
-  body.layout-compact .sketch-box.shape-circle { min-width: ${px(190, scale)}; min-height: ${px(190, scale)}; }
+  .sketch-annotation {
+    font-size: ${bodyAnn}px; color: #d4d4d8;
+    line-height: 1.4; text-align: left;
+  }
+  .sketch-annotation-negative { color: #fcd9a0; }
+  .sketch-annotation-positive { color: #a7f3d0; }
+  .sketch-accent-positive { color: ${theme.sketchAccentGreen}; font-weight: 600; }
+  .sketch-accent-negative { color: ${theme.sketchGold}; font-weight: 600; }
+  .sketch-connector-band {
+    position: absolute; box-sizing: border-box; z-index: 3;
+    display: flex; flex-direction: column; align-items: stretch;
+    pointer-events: none; overflow: hidden;
+  }
+  .sketch-band-label-zone {
+    flex: 0 0 45%; display: flex; align-items: center; justify-content: center;
+  }
+  .sketch-band-arrow-zone { flex: 1 1 55%; min-height: ${px(32, scale)}; }
+  .sketch-band-label {
+    font-family: 'Excalifont', cursive; font-size: ${connLabel}px;
+    color: #e8edf5; text-align: center; line-height: 1.2;
+    max-width: 92%;
+  }
+  .sketch-overlay {
+    position: absolute; inset: 0; pointer-events: none; overflow: visible; z-index: 4;
+  }
+  .sketch-rough-connector { opacity: 0; }
+  .cols { display: flex; gap: ${px(28, scale)}; align-items: stretch; flex: 1; padding: 0 9%; }
+  .col { flex: 1; display: flex; flex-direction: column; justify-content: center; max-width: 46%; }
+  .flow-card {
+    border: none; border-radius: 0; padding: ${px(20, scale)};
+    background: transparent; box-shadow: none; margin-bottom: ${px(12, scale)};
+    font-family: 'Excalifont', cursive;
+  }
+  .flow-label { font-size: ${bodyLabel}px; color: ${theme.accent}; margin-bottom: ${px(8, scale)}; }
+  .flow-step {
+    font-size: ${Math.round(30 * scale)}px; line-height: 1.4; padding: ${px(4, scale)} 0;
+    color: ${theme.textPrimary};
+  }
+  .flow-total { font-size: ${Math.round(32 * scale)}px; margin-top: ${px(10, scale)}; color: ${theme.accentAlt}; }
+  .annotation {
+    border: none; padding: ${px(16, scale)}; font-size: ${Math.round(30 * scale)}px;
+    background: transparent; color: #d4d4d8; text-align: center;
+    font-family: 'Excalifont', cursive;
+  }
+  .decision-layout { display: flex; flex-direction: column; gap: ${px(24, scale)}; flex: 1; padding: 0 9%; }
+  .question-banner {
+    padding: ${px(18, scale)} ${px(24, scale)}; background: transparent; border: none;
+    text-align: center; font-size: ${Math.round(34 * scale)}px; font-family: 'Excalifont', cursive;
+    box-shadow: none;
+  }
+  .branches-row { display: flex; gap: ${px(24, scale)}; justify-content: center; }
+  .branch {
+    flex: 1; max-width: 46%; padding: ${px(16, scale)}; background: transparent; border: none;
+    font-family: 'Excalifont', cursive;
+  }
+  .branch-label { font-size: ${Math.round(34 * scale)}px; margin-bottom: ${px(8, scale)}; }
+  .example { font-size: ${bodyAnn}px; line-height: 1.4; }
+  body.layout-compact h1.title { font-size: ${Math.round(SLIDE_TITLE_FONT_PX * 0.82)}px; }
+  body.layout-compact .sketch-box-label { font-size: ${Math.round(bodyLabel * 0.82)}px; }
+  body.layout-dense .sketch-box-label { font-size: ${Math.round(bodyLabel * 0.88)}px; }
+  body.layout-dense .sketch-annotation { font-size: ${Math.round(bodyAnn * 0.9)}px; }
+  body.layout-dense h1.title { font-size: ${Math.round(SLIDE_TITLE_FONT_PX * 0.88)}px; }
 `;
 }
 
-function renderComparisonHorizontal(elements: SpecElement[], stamp: RevealStamp, sceneId: string): string {
+function renderComparisonHorizontal(elements: SpecElement[], stamp: RevealStamp, sceneId: string, scale: number): string {
   const flows = elements.filter((e) => e.type === 'flow');
   const annotation = elements.find((e) => e.type === 'annotation');
-
   const cols = flows
     .map((flow, i) => {
-      const steps = (flow.steps ?? [])
-        .map((s) => `<div class="flow-step">${escapeHtml(s)}</div>`)
-        .join('');
+      const steps = (flow.steps ?? []).map((s) => `<div class="flow-step">${escapeHtml(s)}</div>`).join('');
       const iconName = resolveIconName({
         explicit: flow.icon,
         variant: 'sketch',
         seed: `${sceneId}:flow:${i}`,
         textParts: [flow.label, ...(flow.steps ?? [])],
       });
-      return `<div class="col">
-        <div ${revealBlockAttrs(stamp, `flow-card ${i % 2 ? 'alt' : ''}`)}>
-          <div class="sketch-box-icon">${sketchIconSvg(iconName, 36)}</div>
-          <div class="flow-label">${escapeHtml(flow.label ?? 'Flow')}</div>
-          ${steps}
-          ${flow.total ? `<div class="flow-total">${escapeHtml(flow.total)}</div>` : ''}
-        </div>
-      </div>`;
+      return `<div class="col"><div ${revealBlockAttrs(stamp, 'flow-card')}>
+        <div class="sketch-box-icon">${boxIconHtml({ type: 'box', icon: iconName, label: flow.label }, sceneId, i, Math.round(36 * scale))}</div>
+        <div class="flow-label">${escapeHtml(flow.label ?? 'Flow')}</div>${steps}
+        ${flow.total ? `<div class="flow-total">${escapeHtml(flow.total)}</div>` : ''}
+      </div></div>`;
     })
     .join('');
-
-  const ann = annotation?.text
-    ? `<div ${revealAttrs(stamp, 'annotation')}>${escapeHtml(annotation.text)}</div>`
-    : '';
-
+  const ann = annotation?.text ? `<div ${revealAttrs(stamp, 'annotation')}>${escapeHtml(annotation.text)}</div>` : '';
   return `<div class="cols">${cols}</div>${ann}`;
 }
 
-function renderDecisionTree(elements: SpecElement[], stamp: RevealStamp): string {
+function renderQuestionDecision(elements: SpecElement[], stamp: RevealStamp): string {
   const question = elements.find((e) => e.type === 'question');
   const yes = elements.find((e) => e.type === 'branch_yes');
   const no = elements.find((e) => e.type === 'branch_no');
   const annotation = elements.find((e) => e.type === 'annotation');
-
-  const renderBranch = (branch: SpecElement | undefined, cls: string) => {
-    if (!branch) return '';
-    const examples = (branch.examples ?? [])
-      .map((ex) => `<div class="example">${escapeHtml(ex)}</div>`)
-      .join('');
+  const branch = (b: SpecElement | undefined, cls: string) => {
+    if (!b) return '';
+    const examples = (b.examples ?? []).map((ex) => `<div class="example">${escapeHtml(ex)}</div>`).join('');
     return `<div ${revealBlockAttrs(stamp, `branch ${cls}`)}>
-      <div class="branch-label">${escapeHtml(branch.label ?? '')}</div>
-      ${examples}
+      <div class="branch-label">${escapeHtml(b.label ?? '')}</div>${examples}
     </div>`;
   };
-
   return `<div class="decision-layout">
-    ${question ? `<div ${revealBlockAttrs(stamp, 'question-banner')}>
-      <div class="question-icon">◆ DECISION ◆</div>
-      <div>${escapeHtml(question.text ?? '')}</div>
-    </div>` : ''}
-    <div class="branches-row">
-      ${renderBranch(yes, 'branch-yes')}
-      ${renderBranch(no, 'branch-no')}
-    </div>
+    ${question ? `<div ${revealBlockAttrs(stamp, 'question-banner')}>${escapeHtml(question.text ?? '')}</div>` : ''}
+    <div class="branches-row">${branch(yes, 'branch-yes')}${branch(no, 'branch-no')}</div>
     ${annotation?.text ? `<div ${revealAttrs(stamp, 'annotation')}>${escapeHtml(annotation.text)}</div>` : ''}
   </div>`;
 }
 
-function renderPipelineHorizontal(elements: SpecElement[], stamp: RevealStamp, sceneId: string): string {
-  const boxes = elements.filter((e) => e.type === 'box' || e.type === 'workflow');
-  const parts: string[] = [];
-
-  for (let i = 0; i < boxes.length; i++) {
-    const box = boxes[i];
-    parts.push(renderSketchBox(stamp, box, sceneId, i, 'pipe-box'));
-    if (i < boxes.length - 1) parts.push(renderArrowStep(stamp, undefined, 'right'));
-  }
-
-  const annotation = elements.find((e) => e.type === 'annotation');
-  return `<div class="pipeline">${parts.join('')}</div>
-    ${annotation?.text ? `<div ${revealAttrs(stamp, 'annotation')}>${escapeHtml(annotation.text)}</div>` : ''}`;
-}
-
 function renderSketchBody(
-  layout: SketchLayoutKind,
+  layoutKind: string,
   elements: SpecElement[],
   stamp: RevealStamp,
   sceneId: string,
+  scale: number,
+  animated: boolean,
 ): string {
-  switch (layout) {
-    case 'comparison_horizontal':
-      return renderComparisonHorizontal(elements, stamp, sceneId);
-    case 'decision_tree':
-      return renderDecisionTree(elements, stamp);
-    case 'flow_vertical':
-    case 'box_chain':
-    case 'u_shape':
-    case 'compact_vertical':
-      return renderBoxChain(elements, stamp, sceneId, layout);
-    case 'pipeline_horizontal':
-    default:
-      return renderPipelineHorizontal(elements, stamp, sceneId);
+  if (elements.some((e) => e.type === 'flow')) {
+    return renderComparisonHorizontal(elements, stamp, sceneId, scale);
   }
+  if (elements.some((e) => e.type === 'question')) {
+    return renderQuestionDecision(elements, stamp);
+  }
+  const layout = asString(layoutKind, 'flow_vertical');
+  const chain = parseSketchChain(elements);
+  if (chain.length === 0) return '';
+  return renderGridCanvas(layout, elements, stamp, sceneId, scale, animated);
 }
 
 export function excalidrawRevealItemCount(scene: ProductionScene, animated: boolean): number {
   if (!animated) return 0;
   const elements = parseElements(scene.data);
   const stamp = createRevealStamp(scene.scene_id, true);
-  const layout = resolveSketchLayout(asString(scene.data.layout, 'pipeline_horizontal'), elements);
-  renderSketchBody(layout, elements, stamp, scene.scene_id);
+  const layout = asString(scene.data.layout, 'flow_vertical');
+  renderSketchBody(layout, elements, stamp, scene.scene_id, sparseScaleForCount(countSketchBlocks(elements)), animated);
   return stamp.index;
 }
 
@@ -590,19 +429,19 @@ export function buildExcalidrawHtml(
 ): string {
   const theme = themeInput ?? resolveTheme();
   const elements = parseElements(scene.data);
-  const layout = resolveSketchLayout(asString(scene.data.layout, 'pipeline_horizontal'), elements);
+  const layout = asString(scene.data.layout, 'flow_vertical');
   const title = humanizeTitle(scene);
   const blockCount = countSketchBlocks(elements);
   const scale = scaleOverride ?? sparseScaleForCount(blockCount);
   const stamp = createRevealStamp(scene.scene_id, animated);
-  const body = renderSketchBody(layout, elements, stamp, scene.scene_id);
-  const compactClass = layout === 'compact_vertical' ? ' layout-compact' : '';
+  const body = renderSketchBody(layout, elements, stamp, scene.scene_id, scale, animated);
 
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"/>
 <style>${buildSketchCss(theme, scale, animated)}</style></head>
-<body class="${compactClass.trim()}">
+<body class="sketch-mode${blockCount >= 4 ? ' layout-dense' : ''}">
   <div class="brand-layer"></div>
+  <div class="sketch-dot-layer" aria-hidden="true"></div>
   <div class="frame"><div class="frame-inner sketch-content">
     <div class="sketch-title-band"><h1 class="title">${escapeHtml(title)}</h1></div>
     <div class="sketch-body">${body}</div>

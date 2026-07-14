@@ -1,4 +1,5 @@
 import { BRAND_ORANGE } from '../themes/accents.js';
+import { SLIDE_TITLE_FONT_PX } from '../themes/slide-title.js';
 import { iconBadgeHtml, resolveIconName } from '../icons/index.js';
 import {
   ZIG_BLOCK_ANIM_SEC,
@@ -373,7 +374,7 @@ export function buildSplitTrackHtml(
 export function pipelineLayoutCss(theme: { cardBg: string; cardBorder: string; textPrimary: string; textSecondary: string }): string {
   return `
   .pipeline-stage .title { margin-bottom: 32px; }
-  .pipeline-many .title { margin-bottom: 40px; font-size: 38px; }
+  .pipeline-many .title { margin-bottom: 40px; font-size: ${SLIDE_TITLE_FONT_PX}px; }
   .pipeline-many .pipe-node { min-height: 88px !important; }
   .pipeline-many .pipe-visual, .pipeline-many .pipe-note { font-size: 15px !important; }
   .pipe-canvas { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; min-height: 0; }
@@ -413,7 +414,7 @@ export function pipelineLayoutCss(theme: { cardBg: string; cardBorder: string; t
   }
   .pipe-arrow { color: ${BRAND_ORANGE}; font-weight: 700; opacity: 0; flex-shrink: 0; }
   .zig-stage { justify-content: flex-start !important; }
-  .zig-stage .title { margin-bottom: 16px; font-size: 42px; flex-shrink: 0; padding: 0 10%; box-sizing: border-box; }
+  .zig-stage .title { margin-bottom: 16px; font-size: ${SLIDE_TITLE_FONT_PX}px; flex-shrink: 0; padding: 0 10%; box-sizing: border-box; }
   .zig-canvas { flex: 1; display: flex; flex-direction: column; justify-content: flex-start; width: 100%; min-height: 0; overflow: hidden; box-sizing: border-box; }
   ${zigzagConnectorCss()}
   .sparse-panel { flex: 1; display: flex; gap: 48px; align-items: center; justify-content: center; width: 100%; padding: 0 40px; }
@@ -430,14 +431,14 @@ export function pipelineLayoutCss(theme: { cardBg: string; cardBorder: string; t
   .split-col { display: flex; flex-direction: column; align-items: stretch; }
   .split-bridge { font-size: 40px; color: ${BRAND_ORANGE}; text-align: center; opacity: 0; font-weight: 700; }
   body.zig-body .stage { padding: 36px 0 32px !important; }
-  body.layout-compact .pipeline-stage .title { margin-bottom: 16px; font-size: 34px; }
+  body.layout-compact .pipeline-stage .title { margin-bottom: 16px; font-size: ${Math.round(SLIDE_TITLE_FONT_PX * 0.82)}px; }
   body.layout-compact .pipe-node { padding: 12px 16px; }
   body.layout-compact .pipe-label { font-size: 18px !important; }
   body.layout-compact .pipe-visual, body.layout-compact .pipe-note { font-size: 14px !important; }
   body.layout-compact .pipe-canvas-h .pipe-row { gap: 10px !important; }
   body.layout-compact .pipe-node { min-height: 72px !important; }
   body.layout-tight .stage { padding: 28px 48px 36px !important; }
-  body.layout-tight .title { margin-bottom: 12px !important; font-size: 30px !important; }
+  body.layout-tight .title { margin-bottom: 12px !important; font-size: ${Math.round(SLIDE_TITLE_FONT_PX * 0.72)}px !important; }
   body.layout-tight .steps, body.layout-tight .steps-columns { gap: 8px !important; max-height: 820px !important; }
   body.layout-tight .step { padding: 10px 12px !important; }
   body.layout-tight .pipe-node { padding: 10px 14px !important; min-height: 64px !important; }

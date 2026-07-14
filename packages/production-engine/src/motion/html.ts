@@ -2,6 +2,7 @@ import type { ProductionScene } from '@ecpe/schemas';
 import type { VisualTheme } from '../themes/index.js';
 import { resolveTheme } from '../themes/index.js';
 import { BRAND_MOTION_CSS } from '../themes/background.js';
+import { SLIDE_TITLE_FONT_PX } from '../themes/slide-title.js';
 import { BRAND_ORANGE, BRAND_ORANGE_DEEP, BRAND_ORANGE_GLOW } from '../themes/accents.js';
 import { iconBadgeHtml, iconSvg, resolveIconName } from '../icons/index.js';
 import { planStepRevealLayout, splitStepsForColumns, type StepRevealLayoutPlan } from './layout.js';
@@ -108,26 +109,26 @@ function buildStyles(theme: VisualTheme, layout: StepLayout, revealPlan?: StepRe
     display: flex; flex-direction: column; overflow: hidden;
   }
   .title {
-    font-size: ${layout.titleSize}px; font-weight: 700; letter-spacing: -0.02em;
+    font-size: ${SLIDE_TITLE_FONT_PX}px; font-weight: 700; letter-spacing: -0.02em;
     opacity: 0; animation: fadeUp 0.8s ease forwards;
     margin-bottom: 28px; flex-shrink: 0;
     color: ${theme.textPrimary};
   }
   .subtitle {
-    font-size: ${Math.round(layout.titleSize * 0.52)}px; color: ${theme.textSecondary};
+    font-size: ${Math.round(SLIDE_TITLE_FONT_PX * 0.52)}px; color: ${theme.textSecondary};
     margin-top: -16px; margin-bottom: 24px; flex-shrink: 0;
     opacity: 0; animation: fadeUp 0.8s ease 0.3s forwards;
   }
   .steps {
     display: flex; flex-direction: column; gap: ${layout.gap}px;
     flex: 1; justify-content: center; min-height: 0; overflow: hidden;
-    max-height: calc(1080px - ${layout.titleSize + 80}px);
+    max-height: calc(1080px - ${SLIDE_TITLE_FONT_PX + 80}px);
     width: 100%;
   }
   .steps-columns {
     display: grid; grid-template-columns: 1fr 1fr; gap: ${layout.gap}px ${layout.gap + 12}px;
     flex: 1; align-content: center; min-height: 0; overflow: hidden;
-    max-height: calc(1080px - ${layout.titleSize + 80}px);
+    max-height: calc(1080px - ${SLIDE_TITLE_FONT_PX + 80}px);
     width: 100%;
   }
   .steps-col {
@@ -174,13 +175,13 @@ function buildStyles(theme: VisualTheme, layout: StepLayout, revealPlan?: StepRe
     font-size: 56px; font-weight: 700; text-align: center; margin: auto;
     opacity: 0; transform: translateY(30px); color: ${theme.textPrimary};
   }
-  body.layout-compact .title { font-size: ${Math.round(layout.titleSize * 0.88)}px !important; }
+  body.layout-compact .title { font-size: ${Math.round(SLIDE_TITLE_FONT_PX * 0.82)}px !important; }
   body.layout-compact .step-label { font-size: ${Math.round(layout.labelSize * 0.9)}px !important; }
   body.layout-compact .step-note { font-size: ${Math.round(layout.noteSize * 0.9)}px !important; }
   body.layout-compact .step-visual { font-size: ${Math.round(visualSize * 0.9)}px !important; }
   body.layout-compact .steps-columns { gap: ${Math.max(8, layout.gap - 4)}px ${Math.max(10, layout.gap + 4)}px; }
   body.layout-compact .steps, body.layout-compact .steps-columns { max-height: 860px !important; }
-  body.layout-tight .title { font-size: 30px !important; margin-bottom: 12px !important; }
+  body.layout-tight .title { font-size: ${Math.round(SLIDE_TITLE_FONT_PX * 0.72)}px !important; margin-bottom: 12px !important; }
   body.layout-tight .steps, body.layout-tight .steps-columns { gap: 8px !important; max-height: 800px !important; }
   body.layout-tight .step { padding: 8px 10px !important; }
   @keyframes fadeUp {

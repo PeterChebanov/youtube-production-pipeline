@@ -27,7 +27,7 @@ export const FRAME_QA_PROFILES: Record<FrameQAProfileId, FrameQAProfile> = {
   excalidraw: {
     id: 'excalidraw',
     blockSelectors: [
-      '.sketch-box',
+      '.sketch-node-inner',
       '.flow-card',
       '.branch',
       '.question-banner',
@@ -36,11 +36,11 @@ export const FRAME_QA_PROFILES: Record<FrameQAProfileId, FrameQAProfile> = {
     ],
     contentSelectors: [
       'h1.title',
-      '.sketch-box',
+      '.sketch-node-inner',
       '.flow-card',
       '.branch',
       '.question-banner',
-      '.chain-arrow',
+      '.sketch-rough-connector',
       '.pipe-box',
       '.annotation',
       '.tradeoff-row',
@@ -63,7 +63,7 @@ export const FRAME_QA_PROFILES: Record<FrameQAProfileId, FrameQAProfile> = {
     blockSelectors: [
       '.flow-card',
       '.pipe-box',
-      '.sketch-box',
+      '.sketch-node-inner',
       '.branch',
       '.question-banner',
       '.pipe-node',
@@ -74,7 +74,7 @@ export const FRAME_QA_PROFILES: Record<FrameQAProfileId, FrameQAProfile> = {
     contentSelectors: [
       '.flow-card',
       '.pipe-box',
-      '.sketch-box',
+      '.sketch-node-inner',
       '.branch',
       '.question-banner',
       '.pipe-node',

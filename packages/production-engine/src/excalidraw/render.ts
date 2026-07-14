@@ -18,7 +18,24 @@ import {
 } from '../shared/layout-validate.js';
 
 const OVERLAP_SELECTORS =
-  '.question-banner, .branch, .flow-card, .annotation, h1.title, .sketch-box, .pipe-box';
+  '.question-banner, .branch, .flow-card, .annotation, h1.title, .sketch-node-inner, .pipe-box';
+
+async function waitForSketchDraw(page: Page): Promise<void> {
+  const hasCanvas = (await page.locator('.sketch-grid-canvas').count()) > 0;
+  if (!hasCanvas) return;
+  try {
+    await page.waitForFunction(
+      () => typeof (globalThis as { __ecpeSketchRoughDraw?: () => void }).__ecpeSketchRoughDraw === 'function',
+      { timeout: 8000 },
+    );
+    await page.evaluate(() => {
+      (globalThis as { __ecpeSketchRoughDraw?: () => void }).__ecpeSketchRoughDraw?.();
+    });
+    await page.waitForTimeout(200);
+  } catch {
+    await page.waitForTimeout(400);
+  }
+}
 
 async function detectLayoutOverlap(page: Page): Promise<boolean> {
   return page.locator(OVERLAP_SELECTORS).evaluateAll((elements) => {
@@ -74,7 +91,8 @@ async function fitExcalidrawPage(
   for (const scale of scaleCandidates) {
     const html = buildExcalidrawHtml(scene, theme, scale, animated);
     await page.setContent(html, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(animated ? 80 : 500);
+    await waitForSketchDraw(page);
+    await page.waitForTimeout(animated ? 80 : 300);
     await page.locator('body').evaluate((el) => el.classList.remove('layout-compact'));
     await applyExcalidrawLayoutFixes(page);
 
@@ -94,6 +112,7 @@ async function fitExcalidrawPage(
 
   const html = buildExcalidrawHtml(scene, theme, 1, animated);
   await page.setContent(html, { waitUntil: 'networkidle' });
+  await waitForSketchDraw(page);
   await page.waitForTimeout(200);
   await page.locator('body').evaluate((el) => el.classList.add('layout-compact'));
   await page.waitForTimeout(200);
