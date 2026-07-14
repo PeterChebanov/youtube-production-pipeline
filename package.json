@@ -19,6 +19,9 @@
     "node": ">=22"
   },
   "packageManager": "pnpm@10.34.5",
+  "pnpm": {
+    "onlyBuiltDependencies": ["ffmpeg-static", "electron", "esbuild", "puppeteer"]
+  },
   "devDependencies": {
     "@types/node": "^22.16.5",
     "electron": "^36.5.0",

@@ -17,6 +17,7 @@ export type ArtifactKey = keyof typeof ARTIFACTS;
 
 export const ASSET_DIRS = [
   'diagrams',
+  'excalidraw',
   'browser',
   'code',
   'terminal',

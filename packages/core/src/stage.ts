@@ -24,6 +24,8 @@ import {
 } from './artifacts.js';
 import { maybeArchiveArtifact } from './archive.js';
 import { openProject, readArtifact, readSourceBrief, writeArtifact } from './project.js';
+import { maybeAutoEpisodeWrap } from './episode-wrap.js';
+import { readCourseContextForEpisode } from './course.js';
 import { reportProgress } from './progress.js';
 
 const LLM_STAGES = new Set<KnowledgeStageId>(
@@ -45,6 +47,7 @@ export interface RunStageOptions {
   provider?: LlmProviderId;
   model?: string;
   revisionNotes?: string;
+  motionRatio?: number;
 }
 
 export interface RunStageResult {
@@ -102,6 +105,12 @@ async function buildStageContext(
 
   const sourceBrief = await readSourceBrief(projectPath);
   if (sourceBrief) context.sourceBrief = sourceBrief;
+
+  const courseCtx = await readCourseContextForEpisode(projectPath);
+  if (courseCtx.applicationState) context.applicationState = courseCtx.applicationState;
+  if (courseCtx.priorCoverage) context.priorCoverage = courseCtx.priorCoverage;
+  if (courseCtx.courseName) context.courseName = courseCtx.courseName;
+  if (courseCtx.episodeNumber) context.episodeNumber = courseCtx.episodeNumber;
 
   for (const key of STAGE_INPUTS[stageId]) {
     if (key === 'channel' || key === 'video') continue;
@@ -206,6 +215,24 @@ export async function runStage(
   await maybeArchiveArtifact(projectPath, outputFile, stageId);
   await writeArtifact(projectPath, outputFile, content);
   await updateProjectState(projectPath, stageId);
+
+  if (stageId === 'youtube-editor') {
+    const wrap = await maybeAutoEpisodeWrap(
+      {
+        projectPath,
+        provider: options.provider,
+        model: options.model,
+        revisionNotes: options.revisionNotes,
+      },
+      content,
+    );
+    if (!wrap.skipped && wrap.result) {
+      reportProgress({
+        stage: 'episode-wrap',
+        message: `Auto-wrapped course application state (${wrap.result.outputFile})`,
+      });
+    }
+  }
 
   return { stageId, outputFile, content };
 }

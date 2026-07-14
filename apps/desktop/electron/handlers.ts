@@ -3,16 +3,29 @@ import path from 'node:path';
 import { homedir } from 'node:os';
 import {
   ARTIFACTS,
+  createCourse,
+  createEpisode,
   createProject,
+  createSingleVideo,
+  defaultCoursesRoot,
+  defaultSinglesRoot,
   exportEditManifestCsv,
+  exportMontageGuide,
+  getCourseInfo,
   getProjectInfo,
+  openCourse,
   openProject,
+  previewMotionPlan,
+  readApplicationState,
+  readPriorCoverage,
   readArtifact,
   reportProgress,
   runKnowledge,
+  runEpisodeWrap,
   runPipelineStage,
   runProduction,
   setProgressReporter,
+  syncCourseEpisodeRegistry,
   syncVideoYamlFromRoadmap,
   writeArtifact,
   type RunStageOptions,
@@ -23,29 +36,50 @@ import { stringify as stringifyYaml } from 'yaml';
 
 export interface AppSettings {
   defaultProjectsRoot: string;
+  defaultCoursesRoot: string;
+  defaultSinglesRoot: string;
   recentProjects: string[];
+  recentCourses: string[];
 }
 
 const SETTINGS_DIR = path.join(homedir(), '.ecpe');
 const SETTINGS_FILE = path.join(SETTINGS_DIR, 'settings.json');
 
 export async function loadSettings(): Promise<AppSettings> {
-  const fallback = desktopDefaultProjectsRoot();
+  const fallbackSingles = desktopDefaultSinglesRoot();
+  const fallbackCourses = desktopDefaultCoursesRoot();
   try {
     const raw = await readFile(SETTINGS_FILE, 'utf8');
-    const parsed = JSON.parse(raw) as AppSettings;
+    const parsed = JSON.parse(raw) as Partial<AppSettings>;
     const oldDefault = path.join(homedir(), 'Videos', 'ECPE', 'projects');
-    if (!parsed.defaultProjectsRoot || parsed.defaultProjectsRoot === oldDefault) {
-      parsed.defaultProjectsRoot = fallback;
-    }
-    return parsed;
+    const projectsRoot =
+      !parsed.defaultProjectsRoot || parsed.defaultProjectsRoot === oldDefault
+        ? fallbackSingles
+        : parsed.defaultProjectsRoot;
+    return {
+      defaultProjectsRoot: projectsRoot,
+      defaultCoursesRoot: parsed.defaultCoursesRoot || fallbackCourses,
+      defaultSinglesRoot: parsed.defaultSinglesRoot || fallbackSingles,
+      recentProjects: parsed.recentProjects ?? [],
+      recentCourses: parsed.recentCourses ?? [],
+    };
   } catch {
-    return { defaultProjectsRoot: fallback, recentProjects: [] };
+    return {
+      defaultProjectsRoot: fallbackSingles,
+      defaultCoursesRoot: fallbackCourses,
+      defaultSinglesRoot: fallbackSingles,
+      recentProjects: [],
+      recentCourses: [],
+    };
   }
 }
 
-export function desktopDefaultProjectsRoot(): string {
-  return path.join(homedir(), 'Desktop', 'ECPE', 'projects');
+export function desktopDefaultCoursesRoot(): string {
+  return path.join(homedir(), 'Desktop', 'ECPE', 'courses');
+}
+
+export function desktopDefaultSinglesRoot(): string {
+  return path.join(homedir(), 'Desktop', 'ECPE', 'singles');
 }
 
 async function ensureDir(dir: string): Promise<void> {
@@ -80,6 +114,14 @@ export async function touchRecent(projectRoot: string): Promise<AppSettings> {
   return settings;
 }
 
+export async function touchRecentCourse(courseRoot: string): Promise<AppSettings> {
+  const settings = await loadSettings();
+  const next = [courseRoot, ...settings.recentCourses.filter((p) => p !== courseRoot)].slice(0, 12);
+  settings.recentCourses = next;
+  await saveSettings(settings);
+  return settings;
+}
+
 export async function createProjectAction(input: {
   name?: string;
   parentDir?: string;
@@ -91,21 +133,96 @@ export async function createProjectAction(input: {
   }
 
   const settings = await loadSettings();
-  const parentDir = input.parentDir?.trim() || settings.defaultProjectsRoot;
+  const parentDir = input.parentDir?.trim() || settings.defaultSinglesRoot;
   const projectName = deriveProjectName(input);
   await ensureDir(parentDir);
-  const paths = await createProject(parentDir, projectName, {
-    video: {
-      title: input.name?.trim() || projectName,
-      topic: input.topic?.trim() || 'See source-brief.md',
-    },
+  const paths = await createSingleVideo(parentDir, projectName, {
+    topic: input.topic?.trim(),
+    sourceBrief: input.sourceBrief,
   });
-  if (input.sourceBrief?.trim()) {
-    await writeArtifact(paths.root, ARTIFACTS.sourceBrief, input.sourceBrief.trim());
-    await syncVideoYamlFromRoadmap(paths.root, input.sourceBrief.trim());
-  }
   await touchRecent(paths.root);
   return { root: paths.root };
+}
+
+export async function createCourseAction(input: {
+  name?: string;
+  parentDir?: string;
+  topic?: string;
+  sourceBrief?: string;
+  description?: string;
+  type?: 'build-along' | 'theory';
+}): Promise<{ courseRoot: string; firstEpisodeRoot?: string }> {
+  if (!input.name?.trim() && !input.sourceBrief?.trim()) {
+    throw new Error('Provide a course name or a narrative for the first episode.');
+  }
+
+  const settings = await loadSettings();
+  const parentDir = input.parentDir?.trim() || settings.defaultCoursesRoot;
+  const courseName = input.name?.trim() || deriveProjectName(input);
+  await ensureDir(parentDir);
+
+  const { paths, firstEpisodeRoot } = await createCourse(parentDir, {
+    name: courseName,
+    description: input.description,
+    type: input.type ?? 'build-along',
+    firstEpisodeBrief: input.sourceBrief?.trim(),
+    firstEpisodeTitle: input.name?.trim() || courseName,
+    firstEpisodeTopic: input.topic?.trim(),
+  });
+
+  await touchRecentCourse(paths.root);
+  if (firstEpisodeRoot) await touchRecent(firstEpisodeRoot);
+  return { courseRoot: paths.root, firstEpisodeRoot };
+}
+
+export async function loadCourseAction(courseRoot: string) {
+  await openCourse(courseRoot);
+  const info = await syncCourseEpisodeRegistry(courseRoot);
+  await touchRecentCourse(courseRoot);
+  return info;
+}
+
+export async function getCourseInfoAction(courseRoot: string) {
+  await touchRecentCourse(courseRoot);
+  return syncCourseEpisodeRegistry(courseRoot);
+}
+
+export async function createEpisodeAction(input: {
+  courseRoot: string;
+  title: string;
+  topic?: string;
+  sourceBrief?: string;
+}): Promise<{ root: string }> {
+  const paths = await createEpisode(input.courseRoot, {
+    title: input.title.trim(),
+    topic: input.topic?.trim(),
+    sourceBrief: input.sourceBrief?.trim(),
+  });
+  await touchRecent(paths.root);
+  await touchRecentCourse(input.courseRoot);
+  return { root: paths.root };
+}
+
+export async function getApplicationStateAction(courseRoot: string) {
+  const content = (await readApplicationState(courseRoot)) ?? '';
+  return { content };
+}
+
+export async function saveApplicationStateAction(courseRoot: string, content: string) {
+  await openCourse(courseRoot);
+  await writeArtifact(courseRoot, 'application-state.md', content);
+  return { ok: true };
+}
+
+export async function getPriorCoverageAction(courseRoot: string) {
+  const content = (await readPriorCoverage(courseRoot)) ?? '';
+  return { content };
+}
+
+export async function savePriorCoverageAction(courseRoot: string, content: string) {
+  await openCourse(courseRoot);
+  await writeArtifact(courseRoot, 'prior-coverage.md', content);
+  return { ok: true };
 }
 
 export async function getProjectInfoAction(projectRoot: string) {
@@ -114,7 +231,13 @@ export async function getProjectInfoAction(projectRoot: string) {
 }
 
 export async function getArtifactAction(projectRoot: string, filename: string) {
-  return readArtifact(projectRoot, filename);
+  try {
+    return await readArtifact(projectRoot, filename);
+  } catch (err) {
+    const code = err && typeof err === 'object' && 'code' in err ? (err as NodeJS.ErrnoException).code : undefined;
+    if (code === 'ENOENT') return '';
+    throw err;
+  }
 }
 
 export async function saveArtifactAction(
@@ -160,6 +283,12 @@ export async function runPipelineAction(
       await touchRecent(options.projectPath);
       return { ok: true, stages: result.stages.map((s) => s.outputFile) };
     }
+    if (stageId === 'episode-wrap') {
+      const result = await runEpisodeWrap({ ...runOpts, force: true });
+      await touchRecent(options.projectPath);
+      if (result.courseRoot) await touchRecentCourse(result.courseRoot);
+      return { ok: true, stages: [result.outputFile], courseRoot: result.courseRoot };
+    }
     const result = await runPipelineStage(stageId, runOpts);
     await touchRecent(options.projectPath);
     return { ok: true, stages: [result.outputFile] };
@@ -170,6 +299,11 @@ export async function runPipelineAction(
 
 export async function exportManifestCsvAction(projectRoot: string) {
   const out = await exportEditManifestCsv(projectRoot);
+  return { path: out };
+}
+
+export async function exportMontageGuideAction(projectRoot: string) {
+  const out = await exportMontageGuide(projectRoot);
   return { path: out };
 }
 
@@ -220,6 +354,10 @@ export function channelVideoToYaml(channel: Record<string, unknown>, video: Reco
     channelYaml: stringifyYaml(ChannelSchema.parse(channel)),
     videoYaml: stringifyYaml(VideoSchema.parse(video)),
   };
+}
+
+export async function previewMotionPlanAction(projectRoot: string, motionRatio: number) {
+  return previewMotionPlan(projectRoot, motionRatio);
 }
 
 // re-export for progress typing

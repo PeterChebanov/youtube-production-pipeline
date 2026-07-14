@@ -1,1 +1,1 @@
-export { segmentScript } from './segment.js';
+export { formatBlocksForPrompt, segmentScript } from './segment.js';

@@ -6,11 +6,21 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
   createProjectAction,
+  createCourseAction,
+  loadCourseAction,
+  getCourseInfoAction,
+  createEpisodeAction,
+  getApplicationStateAction,
+  saveApplicationStateAction,
+  getPriorCoverageAction,
+  savePriorCoverageAction,
   exportManifestCsvAction,
+  exportMontageGuideAction,
   getArtifactAction,
   getProjectInfoAction,
   llmStatusAction,
   loadSettings,
+  previewMotionPlanAction,
   readChannelVideoYaml,
   runPipelineAction,
   saveArtifactAction,
@@ -99,6 +109,20 @@ ipcMain.handle('settings:get', async () => loadSettings());
 ipcMain.handle('settings:save', async (_e, patch) => updateSettingsAction(patch));
 
 ipcMain.handle('project:create', async (_e, input) => createProjectAction(input));
+ipcMain.handle('course:create', async (_e, input) => createCourseAction(input));
+ipcMain.handle('course:load', async (_e, root: string) => loadCourseAction(root));
+ipcMain.handle('course:info', async (_e, root: string) => getCourseInfoAction(root));
+ipcMain.handle('course:createEpisode', async (_e, input) => createEpisodeAction(input));
+ipcMain.handle('course:getApplicationState', async (_e, root: string) =>
+  getApplicationStateAction(root),
+);
+ipcMain.handle('course:saveApplicationState', async (_e, root: string, content: string) =>
+  saveApplicationStateAction(root, content),
+);
+ipcMain.handle('course:getPriorCoverage', async (_e, root: string) => getPriorCoverageAction(root));
+ipcMain.handle('course:savePriorCoverage', async (_e, root: string, content: string) =>
+  savePriorCoverageAction(root, content),
+);
 ipcMain.handle('project:info', async (_e, root: string) => getProjectInfoAction(root));
 
 ipcMain.handle('project:pickDirectory', async (_e, startPath?: string) => {
@@ -154,6 +178,12 @@ ipcMain.handle(
 ipcMain.handle('pipeline:run', async (_e, stageId: string, options) =>
   runPipelineAction(stageId, options, sendProgress),
 );
+ipcMain.handle('motion:preview', async (_e, root: string, motionRatio: number) =>
+  previewMotionPlanAction(root, motionRatio),
+);
 
 ipcMain.handle('manifest:exportCsv', async (_e, root: string) => exportManifestCsvAction(root));
+ipcMain.handle('manifest:exportMontageGuide', async (_e, root: string) =>
+  exportMontageGuideAction(root),
+);
 ipcMain.handle('llm:status', async () => llmStatusAction());

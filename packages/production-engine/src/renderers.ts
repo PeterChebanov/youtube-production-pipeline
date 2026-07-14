@@ -1,58 +1,61 @@
-import { mkdir, writeFile, unlink } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { createRequire } from 'node:module';
-import type { RenderResult, Renderer } from './types.js';
-
-const execFileAsync = promisify(execFile);
-const require = createRequire(import.meta.url);
-
-function mmdcPath(): string {
-  const entry = require.resolve('@mermaid-js/mermaid-cli');
-  return path.join(path.dirname(entry), 'cli.js');
-}
-
-async function writeHtmlAsset(outputPath: string, body: string, title: string): Promise<RenderResult> {
-  const html = `<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"/><title>${escapeHtml(title)}</title>
-<style>
-  body { margin: 0; font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; }
-  .wrap { padding: 32px; max-width: 1200px; margin: 0 auto; }
-</style></head><body><div class="wrap">${body}</div></body></html>`;
-  await mkdir(path.dirname(outputPath), { recursive: true });
-  await writeFile(outputPath, html, 'utf8');
-  return { ok: true, paths: [outputPath] };
-}
+import type { RenderContext, RenderResult, Renderer } from './types.js';
+import {
+  resolveTheme,
+  buildBrandDocument,
+  panelCardCss,
+  type VisualTheme,
+} from './themes/index.js';
+import { detectAndBuildBrowserHtml } from './browser/tree-html.js';
+import { buildCodePanelHtml, type CodePart } from './code/panel-html.js';
+import { planCodeLayout, planTerminalLayout } from './code/layout.js';
+import { renderExcalidrawPng, renderExcalidrawMp4 } from './excalidraw/render.js';
+import { renderMotionMp4 } from './motion/render.js';
+import { renderMermaidPng, renderMermaidMp4 } from './mermaid/render.js';
+import { renderUiCardsHtml, renderUiCardsMp4 } from './ui-cards/render.js';
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+function themeOrDefault(context?: RenderContext): VisualTheme {
+  return context?.theme ?? resolveTheme();
+}
+
+function preferHtmlContent(url: string, html: string): boolean {
+  if (!html.trim()) return false;
+  if (!url.trim()) return true;
+  return /\/username\/|example\.com|placeholder|your-org|your-repo|fake-|not-a-real/i.test(url);
+}
+
+function colorizeTerminalLine(line: string): string {
+  const s = escapeHtml(line);
+  if (/^\$/.test(line)) return `<span class="prompt">${s}</span>`;
+  if (/error|fail|fatal/i.test(line)) return `<span class="err">${s}</span>`;
+  if (/✓|success|done|ok\b/i.test(line)) return `<span class="ok">${s}</span>`;
+  if (/warn/i.test(line)) return `<span class="warn">${s}</span>`;
+  if (/^#/.test(line)) return `<span class="comment">${s}</span>`;
+  return s;
+}
+
 export const mermaidRenderer: Renderer = {
   id: 'mermaid',
   assetSubdir: 'diagrams',
-  fileExtension: '.svg',
+  fileExtension: '.png',
 
-  async render(scene, outputPath): Promise<RenderResult> {
+  async render(scene, outputPath, context): Promise<RenderResult> {
     const source = scene.data.source;
     if (typeof source !== 'string' || !source.trim()) {
       return { ok: false, paths: [], error: 'mermaid scene requires data.source' };
     }
-
-    await mkdir(path.dirname(outputPath), { recursive: true });
-    const inputPath = `${outputPath}.mmd`;
-
     try {
-      await writeFile(inputPath, source, 'utf8');
-      await execFileAsync(process.execPath, [mmdcPath(), '-i', inputPath, '-o', outputPath], {
-        timeout: 120_000,
-      });
-      return { ok: true, paths: [outputPath] };
+      if (context?.animated) {
+        return await renderMermaidMp4(source, outputPath, scene.scene_id, context);
+      }
+      return await renderMermaidPng(source, outputPath, context, scene.scene_id);
     } catch (err) {
       return { ok: false, paths: [], error: err instanceof Error ? err.message : String(err) };
-    } finally {
-      await unlink(inputPath).catch(() => undefined);
     }
   },
 };
@@ -62,7 +65,7 @@ export const codeRenderer: Renderer = {
   assetSubdir: 'code',
   fileExtension: '.html',
 
-  async render(scene, outputPath): Promise<RenderResult> {
+  async render(scene, outputPath, context): Promise<RenderResult> {
     const code = scene.data.code;
     const language = scene.data.language;
     if (typeof code !== 'string' || !code.trim()) {
@@ -72,14 +75,33 @@ export const codeRenderer: Renderer = {
       return { ok: false, paths: [], error: 'code scene requires data.language' };
     }
 
+    const theme = themeOrDefault(context);
+    const shikiTheme = theme.codeTheme === 'github-light' ? 'github-light' : 'tokyo-night';
+
     try {
       const { getSingletonHighlighter } = await import('shiki');
       const highlighter = await getSingletonHighlighter({
-        themes: ['github-dark'],
+        themes: ['github-light', 'github-dark', 'tokyo-night'],
         langs: [language],
       });
-      const highlighted = highlighter.codeToHtml(code, { lang: language, theme: 'github-dark' });
-      return writeHtmlAsset(outputPath, highlighted, scene.scene_id);
+
+      const plan = planCodeLayout(code);
+      const codeParts: CodePart[] = [];
+      for (let i = 0; i < plan.parts.length; i++) {
+        const highlighted = highlighter.codeToHtml(plan.parts[i], {
+          lang: language,
+          theme: shikiTheme,
+        });
+        codeParts.push({
+          label: plan.parts.length > 1 ? `Part ${i + 1}` : '',
+          html: highlighted,
+        });
+      }
+
+      const html = buildCodePanelHtml(scene, codeParts, plan.fontSize, language, theme);
+      await mkdir(path.dirname(outputPath), { recursive: true });
+      await writeFile(outputPath, html, 'utf8');
+      return { ok: true, paths: [outputPath] };
     } catch (err) {
       return { ok: false, paths: [], error: err instanceof Error ? err.message : String(err) };
     }
@@ -91,17 +113,66 @@ export const terminalRenderer: Renderer = {
   assetSubdir: 'terminal',
   fileExtension: '.html',
 
-  async render(scene, outputPath): Promise<RenderResult> {
+  async render(scene, outputPath, context): Promise<RenderResult> {
     const lines = scene.data.lines;
     if (!Array.isArray(lines) || lines.length === 0) {
       return { ok: false, paths: [], error: 'terminal scene requires data.lines array' };
     }
     const title = typeof scene.data.title === 'string' ? scene.data.title : 'Terminal';
-    const body = `<div style="font-family: ui-monospace, monospace; background:#111; padding:24px; border-radius:12px; line-height:1.5;">
-      <div style="color:#94a3b8; margin-bottom:12px;">${escapeHtml(title)}</div>
-      ${lines.map((l) => `<div>${escapeHtml(String(l))}</div>`).join('')}
+    const theme = themeOrDefault(context);
+    const caption =
+      typeof scene.data.caption === 'string' ? scene.data.caption : (scene.purpose ?? '');
+    const lineStrings = lines.map((l) => String(l));
+    const plan = planTerminalLayout(lineStrings);
+    const multi = plan.columns === 2;
+
+    const renderLines = (group: string[]) =>
+      group.map((l) => `<div class="term-line">${colorizeTerminalLine(l)}</div>`).join('');
+
+    const columnsHtml = plan.lineGroups
+      .map(
+        (group, i) => `
+        <div class="term-col">
+          ${multi ? `<div class="term-part-label">Part ${i + 1}</div>` : ''}
+          ${renderLines(group)}
+        </div>`,
+      )
+      .join('');
+
+    const css = `
+    ${panelCardCss(theme)}
+    .term-body {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      background: #0d1117; padding: 24px 28px;
+      line-height: 1.55; font-size: ${plan.fontSize}px;
+      display: ${multi ? 'grid' : 'block'};
+      grid-template-columns: ${multi ? '1fr 1fr' : '1fr'};
+      gap: ${multi ? '24px' : '0'};
+    }
+    .term-part-label {
+      font-size: 18px; font-weight: 700; color: ${theme.accent};
+      margin-bottom: 12px;
+    }
+    .term-line { margin: 3px 0; white-space: pre-wrap; word-break: break-word; }
+    .prompt { color: #7ee787; } .ok { color: #3fb950; } .err { color: #f85149; }
+    .warn { color: #d29922; } .comment { color: #8b949e; }
+    .panel { width: 100%; }
+    `;
+
+    const body = `
+    <div class="panel">
+      <div class="panel-chrome">
+        <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+        <span class="panel-filename">${escapeHtml(title)}</span>
+      </div>
+      ${caption ? `<div class="panel-caption">${escapeHtml(caption)}</div>` : ''}
+      <div class="panel-body term-body">${columnsHtml}</div>
     </div>`;
-    return writeHtmlAsset(outputPath, body, title);
+
+    const html = buildBrandDocument(title, css, body);
+    await mkdir(path.dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, html, 'utf8');
+    return { ok: true, paths: [outputPath] };
   },
 };
 
@@ -110,37 +181,39 @@ export const browserRenderer: Renderer = {
   assetSubdir: 'browser',
   fileExtension: '.png',
 
-  async render(scene, outputPath): Promise<RenderResult> {
+  async render(scene, outputPath, context): Promise<RenderResult> {
     const url = typeof scene.data.url === 'string' ? scene.data.url : '';
     const html = typeof scene.data.html === 'string' ? scene.data.html : '';
     const title = typeof scene.data.title === 'string' ? scene.data.title : scene.scene_id;
+    const caption = typeof scene.data.caption === 'string' ? scene.data.caption : scene.purpose;
+    const theme = themeOrDefault(context);
+    const useHtml = preferHtmlContent(url, html);
 
     try {
       const { chromium } = await import('playwright');
       const browser = await chromium.launch({ headless: true });
-      const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
-      if (url) {
-        await page.goto(url, { waitUntil: 'networkidle', timeout: 30_000 });
+      const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+
+      if (useHtml) {
+        const treeDoc = html.trim() ? detectAndBuildBrowserHtml(html, title, theme, caption) : null;
+        const doc =
+          treeDoc ??
+          buildBrandDocument(
+            title,
+            panelCardCss(theme),
+            `<div class="panel" style="padding:40px;font-size:32px;">${html || `<h1>${escapeHtml(title)}</h1>`}</div>`,
+          );
+        await page.setContent(doc, { waitUntil: 'load' });
       } else {
-        await page.setContent(
-          `<html><body style="font-family:system-ui;padding:40px;background:#f8fafc;">${html || `<h1>${escapeHtml(title)}</h1>`}</body></html>`,
-        );
+        await page.goto(url, { waitUntil: 'networkidle', timeout: 30_000 });
       }
+
+      await page.waitForTimeout(400);
       await mkdir(path.dirname(outputPath), { recursive: true });
       await page.screenshot({ path: outputPath, fullPage: false });
       await browser.close();
       return { ok: true, paths: [outputPath] };
     } catch (err) {
-      const fallbackPath = outputPath.replace(/\.png$/, '.html');
-      const body = `<h1>${escapeHtml(title)}</h1><p>URL: ${escapeHtml(url || 'n/a')}</p>${html}`;
-      const result = await writeHtmlAsset(fallbackPath, body, title);
-      if (result.ok) {
-        return {
-          ok: true,
-          paths: result.paths,
-          error: `Playwright unavailable, wrote HTML fallback: ${err instanceof Error ? err.message : String(err)}`,
-        };
-      }
       return { ok: false, paths: [], error: err instanceof Error ? err.message : String(err) };
     }
   },
@@ -151,25 +224,19 @@ export const uiCardsRenderer: Renderer = {
   assetSubdir: 'ui-cards',
   fileExtension: '.html',
 
-  async render(scene, outputPath): Promise<RenderResult> {
-    const title = typeof scene.data.title === 'string' ? scene.data.title : scene.scene_id;
+  async render(scene, outputPath, context): Promise<RenderResult> {
     const cards = scene.data.cards;
     if (!Array.isArray(cards) || cards.length === 0) {
       return { ok: false, paths: [], error: 'ui-cards scene requires data.cards array' };
     }
-    const body = `<h1 style="margin-bottom:24px;">${escapeHtml(title)}</h1>
-      <div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:16px;">
-      ${cards
-        .map((c) => {
-          const card = c as { heading?: string; body?: string };
-          return `<div style="background:#1e293b;padding:20px;border-radius:12px;">
-            <h3 style="margin:0 0 8px;">${escapeHtml(card.heading ?? '')}</h3>
-            <p style="margin:0;opacity:.9;">${escapeHtml(card.body ?? '')}</p>
-          </div>`;
-        })
-        .join('')}
-      </div>`;
-    return writeHtmlAsset(outputPath, body, title);
+    try {
+      if (context?.animated) {
+        return await renderUiCardsMp4(scene, outputPath, context);
+      }
+      return await renderUiCardsHtml(scene, outputPath, context);
+    } catch (err) {
+      return { ok: false, paths: [], error: err instanceof Error ? err.message : String(err) };
+    }
   },
 };
 
@@ -191,21 +258,25 @@ export const illustrationRenderer: Renderer = {
   },
 };
 
+export const excalidrawRenderer: Renderer = {
+  id: 'excalidraw',
+  assetSubdir: 'excalidraw',
+  fileExtension: '.png',
+
+  async render(scene, outputPath, context): Promise<RenderResult> {
+    if (context?.animated) {
+      return renderExcalidrawMp4(scene, outputPath, context);
+    }
+    return renderExcalidrawPng(scene, outputPath, context);
+  },
+};
+
 export const motionRenderer: Renderer = {
   id: 'motion',
   assetSubdir: 'motion',
-  fileExtension: '.json',
+  fileExtension: '.mp4',
 
-  async render(scene, outputPath): Promise<RenderResult> {
-    const spec = {
-      scene_id: scene.scene_id,
-      template: scene.data.template ?? 'fade-title',
-      title: scene.data.title ?? '',
-      subtitle: scene.data.subtitle ?? '',
-      note: 'Import into Motion Canvas template (post-render step)',
-    };
-    await mkdir(path.dirname(outputPath), { recursive: true });
-    await writeFile(outputPath, JSON.stringify(spec, null, 2), 'utf8');
-    return { ok: true, paths: [outputPath] };
+  async render(scene, outputPath, context): Promise<RenderResult> {
+    return renderMotionMp4(scene, outputPath, context);
   },
 };

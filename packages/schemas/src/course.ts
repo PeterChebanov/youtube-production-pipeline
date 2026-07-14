@@ -1,0 +1,42 @@
+import { z } from 'zod';
+
+export const COURSE_TYPES = ['build-along', 'theory'] as const;
+
+export const CourseSchema = z.object({
+  name: z.string().min(1),
+  slug: z.string().min(1),
+  type: z.enum(COURSE_TYPES).default('build-along'),
+  description: z.string().default(''),
+  episodes_dir: z.string().default('episodes'),
+});
+
+export type Course = z.infer<typeof CourseSchema>;
+
+export const CourseEpisodeEntrySchema = z.object({
+  episode: z.number().int().positive(),
+  slug: z.string().min(1),
+  title: z.string().min(1),
+  folder: z.string().min(1),
+  created_at: z.string(),
+  status: z.enum(['planned', 'in_progress', 'done']).default('planned'),
+});
+
+export type CourseEpisodeEntry = z.infer<typeof CourseEpisodeEntrySchema>;
+
+export const CourseStateSchema = z.object({
+  version: z.literal(1),
+  slug: z.string().min(1),
+  created_at: z.string(),
+  updated_at: z.string(),
+  episodes: z.array(CourseEpisodeEntrySchema).default([]),
+});
+
+export type CourseState = z.infer<typeof CourseStateSchema>;
+
+export const COURSE_ARTIFACTS = {
+  course: 'course.yaml',
+  courseState: '.ecpe/course-state.json',
+  applicationState: 'application-state.md',
+  priorCoverage: 'prior-coverage.md',
+  masterPlan: 'master-plan.md',
+} as const;

@@ -36,7 +36,8 @@ export function getLlmConfig() {
       'GEMINI_BASE_URL',
       'https://generativelanguage.googleapis.com/v1beta',
     )!,
-    httpTimeoutS: Number(env('HTTP_TIMEOUT_S', '120')),
+    httpTimeoutS: Number(env('HTTP_TIMEOUT_S', '300')),
+  visualPlanTimeoutS: Number(env('VISUAL_PLAN_TIMEOUT_S', '600')),
   };
 }
 
@@ -52,4 +53,6 @@ export interface CompleteOptions {
   user: string;
   maxTokens?: number;
   temperature?: number;
+  /** Override HTTP timeout for this request (seconds). */
+  timeoutS?: number;
 }

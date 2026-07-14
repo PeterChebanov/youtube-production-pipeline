@@ -29,6 +29,9 @@ Identify topics that are frequently overlooked but should be understood.
 Focus entirely on technical learning and engineering accuracy.
 Do not think about YouTube, storytelling, or audience engagement.
 
+## Narrative balance
+When the user message includes a **Narrative balance** section, follow it strictly — it controls assumed prior knowledge, theory depth, and practice emphasis for this video.
+
 ## Length and format (strict)
 - **Maximum 2,500 words** for the entire document.
 - Use **bullet points**, not long paragraphs. Max **3 sentences** per bullet.

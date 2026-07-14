@@ -4,12 +4,14 @@ import {
   createProject,
   defaultProjectsRoot,
   exportEditManifestCsv,
+  exportMontageGuide,
   getProjectInfo,
   isKnowledgePipelineCommand,
   isProductionPipelineCommand,
   KNOWLEDGE_STAGES,
   PRODUCTION_STAGES,
   runKnowledge,
+  runEpisodeWrap,
   runPipelineStage,
   runProduction,
 } from '@ecpe/core';
@@ -23,7 +25,7 @@ import {
   type LlmProviderId,
 } from '@ecpe/llm';
 
-const ALL_STAGES = [...KNOWLEDGE_STAGES, ...PRODUCTION_STAGES, 'knowledge', 'production'];
+const ALL_STAGES = [...KNOWLEDGE_STAGES, ...PRODUCTION_STAGES, 'knowledge', 'production', 'episode-wrap'];
 
 const program = new Command();
 
@@ -65,6 +67,16 @@ program
   .option('--model <model>', 'Override model name')
   .option('-r, --revision <notes>', 'Revision notes appended to the user prompt')
   .option('--scene <sceneId>', 'Scene id for render-scene stage')
+  .option(
+    '--renderer <renderer>',
+    'Render only scenes for this renderer (repeatable, e.g. motion, mermaid)',
+    (val: string, memo: string[]) => {
+      memo.push(val);
+      return memo;
+    },
+    [] as string[],
+  )
+  .option('--motion-ratio <ratio>', 'Fraction of animatable scenes as MP4 (0–1)', parseFloat)
   .action(
     async (
       stageId: string,
@@ -74,6 +86,8 @@ program
         model?: string;
         revision?: string;
         scene?: string;
+        renderer?: string[];
+        motionRatio?: number;
       },
     ) => {
       const runOpts = {
@@ -82,6 +96,8 @@ program
         model: opts.model,
         revisionNotes: opts.revision,
         sceneId: opts.scene,
+        renderers: opts.renderer?.length ? opts.renderer : undefined,
+        motionRatio: opts.motionRatio,
       };
 
       if (isKnowledgePipelineCommand(stageId)) {
@@ -104,6 +120,12 @@ program
         return;
       }
 
+      if (stageId === 'episode-wrap') {
+        const result = await runEpisodeWrap({ ...runOpts, force: true });
+        console.log(`Updated ${result.outputFile} on course ${result.courseRoot}`);
+        return;
+      }
+
       const result = await runPipelineStage(stageId, runOpts);
       const extra =
         'rendered' in result && result.rendered !== undefined
@@ -116,14 +138,20 @@ program
 program
   .command('export')
   .description('Export project artifacts')
-  .argument('<kind>', 'Export kind (manifest-csv)')
+  .argument('<kind>', 'Export kind (manifest-csv | montage-guide)')
   .requiredOption('-p, --project <path>', 'Project directory')
   .action(async (kind: string, opts: { project: string }) => {
-    if (kind !== 'manifest-csv') {
-      throw new Error(`Unknown export kind: ${kind}`);
+    if (kind === 'manifest-csv') {
+      const out = await exportEditManifestCsv(opts.project);
+      console.log(`Wrote ${out}`);
+      return;
     }
-    const out = await exportEditManifestCsv(opts.project);
-    console.log(`Wrote ${out}`);
+    if (kind === 'montage-guide') {
+      const out = await exportMontageGuide(opts.project);
+      console.log(`Wrote ${out}`);
+      return;
+    }
+    throw new Error(`Unknown export kind: ${kind}`);
   });
 
 program

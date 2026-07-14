@@ -1,13 +1,25 @@
 <script lang="ts">
   import { marked } from 'marked';
   import { onMount } from 'svelte';
+  import type { AppSettings, CourseInfo } from './global';
 
-  type View = 'home' | 'project' | 'montage' | 'settings';
+  type View = 'home' | 'create' | 'course' | 'project' | 'montage' | 'settings';
+  type CreateMode = 'course' | 'single';
 
   let view: View = $state('home');
-  let settings = $state<{ defaultProjectsRoot: string; recentProjects: string[] } | null>(null);
+  let createMode: CreateMode = $state('single');
+  let settings = $state<AppSettings | null>(null);
   let projectRoot = $state('');
   let projectInfo = $state<any>(null);
+  let courseRoot = $state('');
+  let courseInfo = $state<CourseInfo | null>(null);
+  let applicationState = $state('');
+  let applicationStateDirty = $state(false);
+  let priorCoverage = $state('');
+  let priorCoverageDirty = $state(false);
+  let newEpisodeTitle = $state('');
+  let newEpisodeTopic = $state('');
+  let newEpisodeBrief = $state('');
   let logs = $state<string[]>([]);
   let busy = $state(false);
   let revision = $state('');
@@ -16,11 +28,18 @@
 
   let newName = $state('');
   let newTopic = $state('');
+  let newDescription = $state('');
+  let newCourseType = $state<'build-along' | 'theory'>('build-along');
   let newSourceBrief = $state('');
-  let projectsFolder = $state('');
+  let targetFolder = $state('');
 
   let channelYaml = $state('');
   let videoYaml = $state('');
+  type NarrativeBalance = 'theory-first' | 'balanced' | 'practice-first';
+  let narrativeBalance = $state<NarrativeBalance>('theory-first');
+  let theoryBoost = $state('');
+  let practiceBoost = $state('');
+  let narrativeDirty = $state(false);
   let contextSaved = $state(true);
   let contextEditing = $state(false);
   let sourceBrief = $state('');
@@ -28,15 +47,38 @@
   let artifactContent = $state('');
 
   let manifest = $state<any>(null);
-  let segments = $state<any>(null);
-  let selectedSegmentId = $state<string | null>(null);
+  let blocks = $state<any>(null);
+  let selectedBlockId = $state<string | null>(null);
+  let selectedEntryIndex = $state<number | null>(null);
 
   let llmStatus = $state<Record<string, string>>({});
   let llmLoading = $state(false);
 
-  const DEFAULT_PROJECTS_FOLDER = '~/Desktop/ECPE/projects';
+  let motionRatioPercent = $state(0);
+  let motionPreview = $state<{
+    fixed_static: number;
+    already_motion: number;
+    animatable: number;
+    selected_animated: number;
+    selected_static_animatable: number;
+  } | null>(null);
+
+  const MOTION_RATIO_STEPS = [0, 25, 50, 75, 100];
+
+  const DEFAULT_COURSES_FOLDER = '~/Desktop/ECPE/courses';
+  const DEFAULT_SINGLES_FOLDER = '~/Desktop/ECPE/singles';
 
   let canCreate = $derived(!!newSourceBrief.trim() || !!newName.trim());
+
+  let breadcrumb = $derived.by(() => {
+    const parts: string[] = [];
+    if (courseInfo?.course?.name) parts.push(courseInfo.course.name);
+    if (projectInfo?.video?.episode) parts.push(`Ep ${projectInfo.video.episode}`);
+    else if (projectRoot && !courseRoot) parts.push('Single video');
+    if (projectRoot && view === 'project') parts.push('Pipeline');
+    if (projectRoot && view === 'montage') parts.push('Montage');
+    return parts.join(' › ');
+  });
 
   const pipelineStageKeys = [
     'research',
@@ -70,6 +112,93 @@
   ];
   const productionStages = ['visual-plan', 'render-assets'];
 
+  function parseMotionRatioFromYaml(yaml: string): number {
+    const m = yaml.match(/^motion_ratio:\s*([0-9.]+)\s*$/m);
+    if (!m) return 0;
+    const v = Number(m[1]);
+    if (!Number.isFinite(v)) return 0;
+    return Math.min(100, Math.max(0, Math.round(v * 100)));
+  }
+
+  function motionRatioLabel(percent: number): string {
+    if (percent === 0) return '100% static';
+    if (percent === 100) return '100% motion';
+    return `${percent}% motion / ${100 - percent}% static`;
+  }
+
+  async function refreshMotionPreview() {
+    if (!projectRoot || !window.ecpe?.previewMotionPlan) {
+      motionPreview = null;
+      return;
+    }
+    if (!projectInfo?.artifacts?.productionPlan) {
+      motionPreview = null;
+      return;
+    }
+    try {
+      const stats = await window.ecpe.previewMotionPlan(
+        projectRoot,
+        motionRatioPercent / 100,
+      );
+      motionPreview = stats;
+    } catch {
+      motionPreview = null;
+    }
+  }
+
+  function onMotionRatioChange(percent: number) {
+    motionRatioPercent = percent;
+    void refreshMotionPreview();
+  }
+
+  function parseYamlScalar(yaml: string, key: string): string {
+    const m = yaml.match(new RegExp(`^${key}:\\s*(.*)$`, 'm'));
+    if (!m) return '';
+    let v = m[1].trim();
+    if (
+      (v.startsWith('"') && v.endsWith('"')) ||
+      (v.startsWith("'") && v.endsWith("'"))
+    ) {
+      v = v.slice(1, -1);
+    }
+    return v;
+  }
+
+  function setYamlScalar(yaml: string, key: string, value: string): string {
+    const needsQuotes = /[:#]/.test(value) || value.includes(',');
+    const formatted =
+      value === '' ? '""' : needsQuotes ? `"${value.replace(/"/g, '\\"')}"` : value;
+    const line = `${key}: ${formatted}`;
+    if (new RegExp(`^${key}:`, 'm').test(yaml)) {
+      return yaml.replace(new RegExp(`^${key}:.*$`, 'm'), line);
+    }
+    return `${yaml.trimEnd()}\n${line}\n`;
+  }
+
+  function loadNarrativeFromVideoYaml() {
+    const balance = parseYamlScalar(videoYaml, 'narrative_balance') || 'theory-first';
+    narrativeBalance = (
+      ['theory-first', 'balanced', 'practice-first'].includes(balance)
+        ? balance
+        : 'theory-first'
+    ) as NarrativeBalance;
+    theoryBoost = parseYamlScalar(videoYaml, 'theory_boost');
+    practiceBoost = parseYamlScalar(videoYaml, 'practice_boost');
+    narrativeDirty = false;
+  }
+
+  function applyNarrativeToVideoYaml() {
+    let next = videoYaml;
+    next = setYamlScalar(next, 'narrative_balance', narrativeBalance);
+    next = setYamlScalar(next, 'theory_boost', theoryBoost);
+    next = setYamlScalar(next, 'practice_boost', practiceBoost);
+    videoYaml = next;
+  }
+
+  function onNarrativeChange() {
+    narrativeDirty = true;
+  }
+
   function setError(msg: string) {
     errorMessage = msg;
     if (msg) log(`ERROR: ${msg}`);
@@ -82,7 +211,11 @@
   async function refreshSettings() {
     if (!window.ecpe) return;
     settings = await window.ecpe.getSettings();
-    projectsFolder = settings.defaultProjectsRoot;
+    if (createMode === 'course') {
+      targetFolder = settings.defaultCoursesRoot;
+    } else {
+      targetFolder = settings.defaultSinglesRoot;
+    }
     llmLoading = true;
     try {
       llmStatus = await window.ecpe.llmStatus();
@@ -91,6 +224,123 @@
     } finally {
       llmLoading = false;
     }
+  }
+
+  function startCreate(mode: CreateMode) {
+    createMode = mode;
+    newName = '';
+    newTopic = '';
+    newDescription = '';
+    newSourceBrief = '';
+    newCourseType = 'build-along';
+    if (settings) {
+      targetFolder = mode === 'course' ? settings.defaultCoursesRoot : settings.defaultSinglesRoot;
+    }
+    view = 'create';
+    clearError();
+  }
+
+  async function openCourse(root: string) {
+    if (!window.ecpe) return;
+    clearError();
+    busy = true;
+    try {
+      courseRoot = root;
+      courseInfo = await window.ecpe.loadCourse(root);
+      const appState = await window.ecpe.getApplicationState(root);
+      applicationState = appState.content;
+      applicationStateDirty = false;
+      const prior = await window.ecpe.getPriorCoverage(root);
+      priorCoverage = prior.content;
+      priorCoverageDirty = false;
+      view = 'course';
+      settings = await window.ecpe.getSettings();
+      log(`Opened course: ${root}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      courseRoot = '';
+      courseInfo = null;
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function refreshCourseInfo() {
+    if (!courseRoot || !window.ecpe) return;
+    courseInfo = await window.ecpe.getCourseInfo(courseRoot);
+  }
+
+  async function pickCourseFolder() {
+    if (!window.ecpe) return;
+    clearError();
+    try {
+      const start = settings?.defaultCoursesRoot;
+      const picked = await window.ecpe.pickDirectory(start);
+      if (!picked) return;
+      await openCourse(picked);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function savePriorCoverage() {
+    if (!courseRoot || !window.ecpe) return;
+    busy = true;
+    clearError();
+    try {
+      await window.ecpe.savePriorCoverage(courseRoot, priorCoverage);
+      priorCoverageDirty = false;
+      log('Saved prior-coverage.md');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function saveApplicationState() {
+    if (!courseRoot || !window.ecpe) return;
+    busy = true;
+    clearError();
+    try {
+      await window.ecpe.saveApplicationState(courseRoot, applicationState);
+      applicationStateDirty = false;
+      log('Saved application-state.md');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function createEpisode() {
+    if (!courseRoot || !window.ecpe || !newEpisodeTitle.trim()) return;
+    busy = true;
+    clearError();
+    try {
+      const { root } = await window.ecpe.createEpisode({
+        courseRoot,
+        title: newEpisodeTitle.trim(),
+        topic: newEpisodeTopic.trim() || undefined,
+        sourceBrief: newEpisodeBrief.trim() || undefined,
+      });
+      newEpisodeTitle = '';
+      newEpisodeTopic = '';
+      newEpisodeBrief = '';
+      await refreshCourseInfo();
+      await openProject(root);
+      log(`Created episode: ${root}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      busy = false;
+    }
+  }
+
+  function episodeStatusLabel(status: string): string {
+    if (status === 'in_progress') return 'In progress';
+    if (status === 'done') return 'Done';
+    return 'Planned';
   }
 
   async function importTextFile(target: 'new' | 'project') {
@@ -134,20 +384,30 @@
     }
   }
 
-  async function pickProjectsFolder(target: 'new' | 'settings') {
+  async function pickTargetFolder(target: 'create' | 'settings-courses' | 'settings-singles') {
     if (!window.ecpe) return;
     clearError();
     try {
-      const start = target === 'new' ? projectsFolder : settings?.defaultProjectsRoot;
+      let start: string | undefined;
+      if (target === 'create') start = targetFolder;
+      else if (target === 'settings-courses') start = settings?.defaultCoursesRoot;
+      else start = settings?.defaultSinglesRoot;
+
       const picked = await window.ecpe.pickDirectory(start);
       if (!picked) return;
-      if (target === 'new') {
-        projectsFolder = picked;
+
+      if (target === 'create') {
+        targetFolder = picked;
       } else if (settings) {
-        settings = { ...settings, defaultProjectsRoot: picked };
-        await window.ecpe.saveSettings({ defaultProjectsRoot: picked });
-        projectsFolder = picked;
-        log(`Projects folder: ${picked}`);
+        if (target === 'settings-courses') {
+          settings = { ...settings, defaultCoursesRoot: picked };
+          await window.ecpe.saveSettings({ defaultCoursesRoot: picked });
+          log(`Courses folder: ${picked}`);
+        } else {
+          settings = { ...settings, defaultSinglesRoot: picked };
+          await window.ecpe.saveSettings({ defaultSinglesRoot: picked });
+          log(`Singles folder: ${picked}`);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -164,11 +424,24 @@
       const y = await window.ecpe.getChannelVideo(root);
       channelYaml = y.channelYaml;
       videoYaml = y.videoYaml;
+      motionRatioPercent = parseMotionRatioFromYaml(y.channelYaml);
+      loadNarrativeFromVideoYaml();
       contextSaved = true;
       contextEditing = false;
       await loadSourceBrief();
       await loadArtifact(artifactName);
       await loadMontageData();
+      await refreshMotionPreview();
+
+      if (projectInfo?.video?.course_root) {
+        courseRoot = projectInfo.video.course_root;
+        try {
+          courseInfo = await window.ecpe.getCourseInfo(courseRoot);
+        } catch {
+          courseInfo = null;
+        }
+      }
+
       view = 'project';
       log(`Opened project: ${root}`);
     } catch (err) {
@@ -197,9 +470,11 @@
       manifest = null;
     }
     try {
-      segments = JSON.parse(await window.ecpe.getArtifact(projectRoot, 'narration-segments.json'));
+      const raw = await window.ecpe.getArtifact(projectRoot, 'narration-segments.json');
+      const parsed = JSON.parse(raw);
+      blocks = parsed.version === 2 ? parsed : null;
     } catch {
-      segments = null;
+      blocks = null;
     }
   }
 
@@ -216,13 +491,33 @@
       const result = await window.ecpe.runPipeline(stageId, {
         projectPath: projectRoot,
         revisionNotes: revision || undefined,
+        motionRatio:
+          stageId === 'render-assets' || stageId === 'production'
+            ? motionRatioPercent / 100
+            : undefined,
       });
       log(`Done: ${result.stages.join(', ')}`);
+      if (stageId === 'render-assets' || stageId === 'production') {
+        log(`Motion mix: ${motionRatioLabel(motionRatioPercent)}`);
+      }
       projectInfo = await window.ecpe.getProjectInfo(projectRoot);
       contextSaved = true;
       contextEditing = false;
+      if ((stageId === 'youtube-editor' || stageId === 'knowledge') && courseRoot) {
+        const appState = await window.ecpe.getApplicationState(courseRoot);
+        applicationState = appState.content;
+        applicationStateDirty = false;
+        log(`Course application state synced (auto episode-wrap if script changed)`);
+      }
+      if (stageId === 'episode-wrap' && courseRoot) {
+        const appState = await window.ecpe.getApplicationState(courseRoot);
+        applicationState = appState.content;
+        applicationStateDirty = false;
+        log(`Course application state updated`);
+      }
       await loadArtifact(artifactName);
       await loadMontageData();
+      await refreshMotionPreview();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -243,16 +538,48 @@
     }
     busy = true;
     clearError();
-    log('Creating project…');
+    log(createMode === 'course' ? 'Creating course…' : 'Creating single video…');
     try {
-      const { root } = await window.ecpe.createProject({
-        name: newName.trim() || undefined,
-        topic: newTopic.trim() || undefined,
-        parentDir: projectsFolder || undefined,
-        sourceBrief: newSourceBrief.trim() || undefined,
-      });
-      await openProject(root);
+      if (createMode === 'course') {
+        const { courseRoot: created, firstEpisodeRoot } = await window.ecpe.createCourse({
+          name: newName.trim() || undefined,
+          topic: newTopic.trim() || undefined,
+          parentDir: targetFolder || undefined,
+          sourceBrief: newSourceBrief.trim() || undefined,
+          description: newDescription.trim() || undefined,
+          type: newCourseType,
+        });
+        await openCourse(created);
+        if (firstEpisodeRoot) await openProject(firstEpisodeRoot);
+      } else {
+        const { root } = await window.ecpe.createProject({
+          name: newName.trim() || undefined,
+          topic: newTopic.trim() || undefined,
+          parentDir: targetFolder || undefined,
+          sourceBrief: newSourceBrief.trim() || undefined,
+        });
+        courseRoot = '';
+        courseInfo = null;
+        await openProject(root);
+      }
       settings = await window.ecpe.getSettings();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function saveNarrativeSettings() {
+    if (!projectRoot || !window.ecpe) return;
+    busy = true;
+    clearError();
+    try {
+      applyNarrativeToVideoYaml();
+      await window.ecpe.saveChannelVideo(projectRoot, channelYaml, videoYaml);
+      projectInfo = await window.ecpe.getProjectInfo(projectRoot);
+      narrativeDirty = false;
+      log('Saved narrative balance settings');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -265,10 +592,12 @@
     busy = true;
     clearError();
     try {
+      if (narrativeDirty) applyNarrativeToVideoYaml();
       await window.ecpe.saveChannelVideo(projectRoot, channelYaml, videoYaml);
       projectInfo = await window.ecpe.getProjectInfo(projectRoot);
       contextSaved = true;
       contextEditing = false;
+      narrativeDirty = false;
       log('Context saved (channel.yaml + video.yaml)');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -288,7 +617,53 @@
     log(`Exported: ${out}`);
   }
 
+  async function exportMontageGuide() {
+    if (!projectRoot || !window.ecpe) return;
+    const { path: out } = await window.ecpe.exportMontageGuide(projectRoot);
+    log(`Exported: ${out}`);
+  }
+
+  function selectManifestRow(row: { block_id?: string; scene_order?: number }, index: number) {
+    selectedEntryIndex = index;
+    if (row.block_id) selectedBlockId = row.block_id;
+  }
+
+  let selectedEntry = $derived(
+    selectedEntryIndex !== null && manifest?.entries
+      ? manifest.entries[selectedEntryIndex]
+      : null,
+  );
+
+  let selectedBlock = $derived(
+    selectedBlockId && blocks?.blocks
+      ? blocks.blocks.find((b: { block_id: string }) => b.block_id === selectedBlockId)
+      : null,
+  );
+
+  let uncoveredSentences = $derived.by(() => {
+    if (!blocks?.blocks || !manifest?.entries) return [];
+    const uncovered: { block_id: string; index: number; text: string }[] = [];
+    for (const block of blocks.blocks) {
+      for (const s of block.sentences) {
+        const covered = manifest.entries.some(
+          (e: { block_id: string; status: string; sentence_start: number; sentence_end: number }) =>
+            e.block_id === block.block_id &&
+            e.status === 'ok' &&
+            e.sentence_start <= s.index &&
+            e.sentence_end >= s.index,
+        );
+        if (!covered) uncovered.push({ block_id: block.block_id, index: s.index, text: s.text });
+      }
+    }
+    return uncovered;
+  });
+
+  let isCourseEpisode = $derived(projectInfo?.video?.kind === 'episode' && !!courseRoot);
+
   function stageDone(id: string): boolean {
+    if (id === 'episode-wrap') {
+      return projectInfo?.state?.last_completed_stage === 'episode-wrap';
+    }
     const map: Record<string, string> = {
       research: 'research',
       'technical-review': 'technicalReview',
@@ -310,7 +685,7 @@
   onMount(() => {
     bridgeReady = !!window.ecpe;
     if (!bridgeReady) {
-      projectsFolder = DEFAULT_PROJECTS_FOLDER;
+      targetFolder = DEFAULT_SINGLES_FOLDER;
       const inElectron = navigator.userAgent.includes('Electron');
       setError(
         inElectron
@@ -329,7 +704,12 @@
   <aside class="sidebar">
     <h1>ECPE</h1>
     <div class="nav">
-      <button class:active={view === 'home'} onclick={() => (view = 'home')}>Project</button>
+      <button class:active={view === 'home'} onclick={() => (view = 'home')}>Home</button>
+      <button
+        class:active={view === 'course'}
+        onclick={() => courseRoot && (view = 'course')}
+        disabled={!courseRoot}>Course</button
+      >
       <button class:active={view === 'project'} onclick={() => projectRoot && (view = 'project')} disabled={!projectRoot}
         >Pipeline</button
       >
@@ -338,7 +718,12 @@
       >
       <button class:active={view === 'settings'} onclick={() => (view = 'settings')}>Settings</button>
     </div>
-    {#if projectRoot}
+    {#if breadcrumb}
+      <p class="muted breadcrumb">{breadcrumb}</p>
+    {/if}
+    {#if courseRoot}
+      <p class="muted path-label">{courseRoot}</p>
+    {:else if projectRoot}
       <p class="muted path-label">{projectRoot}</p>
     {/if}
     <div class="sidebar-footer">
@@ -366,62 +751,30 @@
       </div>
     {:else if view === 'home'}
       <div class="card">
-        <h2>New video</h2>
-        <p class="muted">
-          Create a project folder on disk. Scripts, assets, and channel context for this video live inside.
-        </p>
-
-        <label>
-          Project label <span class="muted">(optional)</span>
-          <input bind:value={newName} placeholder="Folder name — or leave empty if roadmap is provided" />
-        </label>
-
-        <label>
-          Topic <span class="muted">(optional)</span>
-          <input bind:value={newTopic} placeholder="Only if you are not using a roadmap" />
-        </label>
-
-        <div class="brief-section">
-          <div class="brief-header">
-            <div>
-              <div class="field-label">Creator roadmap <span class="muted">(optional)</span></div>
-              <p class="muted">
-                Paste or import your planning doc. Saved as <code>source-brief.md</code> and sent to every
-                pipeline stage. Provide a roadmap <em>or</em> a project label — both are optional, but at
-                least one is required.
-              </p>
-            </div>
-            <button class="secondary" type="button" onclick={() => importTextFile('new')} disabled={busy}>
-              Import file…
-            </button>
-          </div>
-          <textarea
-            bind:value={newSourceBrief}
-            rows="14"
-            placeholder="Paste your video roadmap here…"
-          ></textarea>
-        </div>
-
-        <div class="folder-row">
-          <div>
-            <div class="field-label">Projects folder</div>
-            <div class="folder-path">{projectsFolder || 'Loading…'}</div>
-            <p class="muted">Default: Desktop → ECPE → projects</p>
-          </div>
-          <button class="secondary" onclick={() => pickProjectsFolder('new')} disabled={busy}>
-            Choose folder…
-          </button>
-        </div>
-
-        <div class="actions">
-          <button onclick={createProject} disabled={!canCreate || busy}>
-            {busy ? 'Creating…' : 'Create project'}
-          </button>
+        <h2>Start</h2>
+        <p class="muted">Create a multi-episode course, open an existing one, or start a standalone video.</p>
+        <div class="home-actions">
+          <button onclick={() => startCreate('course')} disabled={busy}>New course</button>
+          <button onclick={pickCourseFolder} disabled={busy}>Load course…</button>
+          <button onclick={() => startCreate('single')} disabled={busy}>New single video</button>
         </div>
       </div>
 
       <div class="card">
-        <h2>Recent</h2>
+        <h2>Recent courses</h2>
+        {#if settings?.recentCourses?.length}
+          {#each settings.recentCourses as c}
+            <div class="actions">
+              <button class="secondary" onclick={() => openCourse(c)}>{c}</button>
+            </div>
+          {/each}
+        {:else}
+          <p class="muted">No courses yet</p>
+        {/if}
+      </div>
+
+      <div class="card">
+        <h2>Recent videos</h2>
         {#if settings?.recentProjects?.length}
           {#each settings.recentProjects as p}
             <div class="actions">
@@ -429,7 +782,7 @@
             </div>
           {/each}
         {:else}
-          <p class="muted">No projects yet</p>
+          <p class="muted">No videos yet</p>
         {/if}
       </div>
 
@@ -441,6 +794,192 @@
           </div>
         </div>
       {/if}
+    {:else if view === 'create'}
+      <div class="card">
+        <h2>{createMode === 'course' ? 'New course' : 'New single video'}</h2>
+        <p class="muted">
+          {#if createMode === 'course'}
+            Creates a course folder with channel context and optional first episode from your narrative.
+          {:else}
+            Creates a standalone video folder — same pipeline as before.
+          {/if}
+        </p>
+
+        <label>
+          {createMode === 'course' ? 'Course name' : 'Project label'}
+          <span class="muted">(optional if roadmap is provided)</span>
+          <input
+            bind:value={newName}
+            placeholder={createMode === 'course'
+              ? 'e.g. Build a SaaS with Next.js'
+              : 'Folder name — or leave empty if roadmap is provided'}
+          />
+        </label>
+
+        {#if createMode === 'course'}
+          <label>
+            Description <span class="muted">(optional)</span>
+            <input bind:value={newDescription} placeholder="Short course summary" />
+          </label>
+          <label>
+            Course type
+            <select bind:value={newCourseType}>
+              <option value="build-along">Build-along</option>
+              <option value="theory">Theory</option>
+            </select>
+          </label>
+        {/if}
+
+        <label>
+          Topic <span class="muted">(optional)</span>
+          <input bind:value={newTopic} placeholder="Episode topic if using a narrative" />
+        </label>
+
+        <div class="brief-section">
+          <div class="brief-header">
+            <div>
+              <div class="field-label">
+                {createMode === 'course' ? 'First episode narrative' : 'Creator roadmap'}
+                <span class="muted">(optional)</span>
+              </div>
+              <p class="muted">
+                {#if createMode === 'course'}
+                  If provided, creates ep01 with this as <code>source-brief.md</code> and injects course
+                  <code>application-state.md</code> into every episode pipeline.
+                {:else}
+                  Saved as <code>source-brief.md</code> and sent to every pipeline stage.
+                {/if}
+              </p>
+            </div>
+            <button class="secondary" type="button" onclick={() => importTextFile('new')} disabled={busy}>
+              Import file…
+            </button>
+          </div>
+          <textarea
+            bind:value={newSourceBrief}
+            rows="14"
+            placeholder={createMode === 'course'
+              ? 'Paste ep01 roadmap or full course plan…'
+              : 'Paste your video roadmap here…'}
+          ></textarea>
+        </div>
+
+        <div class="folder-row">
+          <div>
+            <div class="field-label">{createMode === 'course' ? 'Courses folder' : 'Singles folder'}</div>
+            <div class="folder-path">{targetFolder || 'Loading…'}</div>
+            <p class="muted">
+              Default: Desktop → ECPE → {createMode === 'course' ? 'courses' : 'singles'}
+            </p>
+          </div>
+          <button class="secondary" onclick={() => pickTargetFolder('create')} disabled={busy}>
+            Choose folder…
+          </button>
+        </div>
+
+        <div class="actions">
+          <button class="secondary" onclick={() => (view = 'home')} disabled={busy}>Back</button>
+          <button onclick={createProject} disabled={!canCreate || busy}>
+            {busy ? 'Creating…' : createMode === 'course' ? 'Create course' : 'Create video'}
+          </button>
+        </div>
+      </div>
+    {:else if view === 'course' && courseInfo}
+      <div class="card">
+        <h2>{courseInfo.course.name}</h2>
+        {#if courseInfo.course.description}
+          <p class="muted">{courseInfo.course.description}</p>
+        {/if}
+        <p class="muted">
+          Type: {courseInfo.course.type} · {courseInfo.episodes.length} episode(s)
+        </p>
+        <div class="actions">
+          <button class="secondary" onclick={() => window.ecpe?.openFolder(courseRoot)}>Open course folder</button>
+          <button class="secondary" onclick={refreshCourseInfo} disabled={busy}>Refresh</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Course schema</h2>
+        <p class="muted">Episode map for this course. Click an episode to open its pipeline.</p>
+        <div class="course-schema">
+          {#if courseInfo.episodes.length}
+            {#each courseInfo.episodes as ep}
+              <button type="button" class="episode-card" onclick={() => openProject(ep.root)} disabled={busy}>
+                <span class="ep-num">E{String(ep.episode).padStart(2, '0')}</span>
+                <div class="ep-body">
+                  <p class="ep-title">{ep.title}</p>
+                  <p class="ep-meta">{ep.folder}</p>
+                  <div class="artifact-dots" title="Script · Plan · Manifest">
+                    <span class="artifact-dot" class:on={ep.artifactFlags.finalScript}></span>
+                    <span class="artifact-dot" class:on={ep.artifactFlags.productionPlan}></span>
+                    <span class="artifact-dot" class:on={ep.artifactFlags.editManifest}></span>
+                  </div>
+                </div>
+                <span class="status-pill {ep.status}">{episodeStatusLabel(ep.status)}</span>
+              </button>
+            {/each}
+          {:else}
+            <p class="muted">No episodes yet — add one below or create ep01 when starting the course with a narrative.</p>
+          {/if}
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Add episode</h2>
+        <label>
+          Title
+          <input bind:value={newEpisodeTitle} placeholder="Episode title" />
+        </label>
+        <label>
+          Topic <span class="muted">(optional)</span>
+          <input bind:value={newEpisodeTopic} placeholder="Short topic line" />
+        </label>
+        <label>
+          Roadmap <span class="muted">(optional)</span>
+          <textarea bind:value={newEpisodeBrief} rows="6" placeholder="source-brief.md for this episode"></textarea>
+        </label>
+        <div class="actions">
+          <button onclick={createEpisode} disabled={!newEpisodeTitle.trim() || busy}>
+            {busy ? 'Creating…' : 'Create episode'}
+          </button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Prior coverage</h2>
+        <p class="muted">
+          <strong>Not the same as a episode roadmap.</strong> This is channel-level: what viewers already learned
+          from <em>other</em> videos (e.g. your Fundamental AI playlist). The pipeline will not re-teach these from
+          scratch in any episode. Your per-episode plan still lives in each episode's <code>source-brief.md</code>.
+        </p>
+        <textarea
+          bind:value={priorCoverage}
+          oninput={() => (priorCoverageDirty = true)}
+          rows="10"
+          placeholder="chunking, embeddings, vector stores, basic RAG overview…"
+        ></textarea>
+        <div class="actions">
+          <button onclick={savePriorCoverage} disabled={!priorCoverageDirty || busy}>Save prior coverage</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Application state</h2>
+        <p class="muted">
+          Shared build context injected into every episode pipeline (LLM stages). Update manually as the app grows
+          across episodes.
+        </p>
+        <textarea
+          bind:value={applicationState}
+          oninput={() => (applicationStateDirty = true)}
+          rows="14"
+          placeholder="What exists in the app so far — stack, features, file structure…"
+        ></textarea>
+        <div class="actions">
+          <button onclick={saveApplicationState} disabled={!applicationStateDirty || busy}>Save application state</button>
+        </div>
+      </div>
     {:else if view === 'project' && projectRoot}
       <div class="card">
         <h2>Creator roadmap</h2>
@@ -455,6 +994,49 @@
           <button onclick={saveSourceBrief} disabled={busy}>Save roadmap</button>
         </div>
         <textarea bind:value={sourceBrief} rows="16" placeholder="No roadmap yet — paste or import a planning doc"></textarea>
+      </div>
+
+      <div class="card">
+        <h2>Narrative balance</h2>
+        <p class="muted">
+          Controls theory vs practice depth for research and script stages. Topic boosts override specific subjects.
+          Prior coverage is set at course level.
+        </p>
+        <label>
+          Mode
+          <select
+            bind:value={narrativeBalance}
+            onchange={onNarrativeChange}
+            disabled={busy}
+          >
+            <option value="theory-first">Theory-first — teach from scratch</option>
+            <option value="balanced">Balanced — partial prior knowledge</option>
+            <option value="practice-first">Practice-first — prepared viewer, recap + practice</option>
+          </select>
+        </label>
+        <label>
+          Theory boost <span class="muted">(comma-separated topics)</span>
+          <input
+            bind:value={theoryBoost}
+            oninput={onNarrativeChange}
+            placeholder="RagMemory, reranking"
+            disabled={busy}
+          />
+        </label>
+        <label>
+          Practice boost <span class="muted">(comma-separated topics)</span>
+          <input
+            bind:value={practiceBoost}
+            oninput={onNarrativeChange}
+            placeholder="chunking strategies, metadata filters"
+            disabled={busy}
+          />
+        </label>
+        <div class="actions">
+          <button onclick={saveNarrativeSettings} disabled={!narrativeDirty || busy}>
+            Save narrative settings
+          </button>
+        </div>
       </div>
 
       <div class="card">
@@ -497,7 +1079,57 @@
             >
           {/each}
         </div>
+        {#if isCourseEpisode}
+          <h3>Course continuity</h3>
+          <p class="muted small">
+            <strong>Auto:</strong> after <code>youtube-editor</code>, episode-wrap runs when
+            <code>final-script.md</code> changed — updates course <code>application-state.md</code>
+            (incl. project tree). Unchanged script → skip. Re-run youtube-editor with edits → re-wrap.
+          </p>
+          <div class="actions">
+            <button
+              class="secondary"
+              onclick={() => run('episode-wrap')}
+              disabled={busy || !projectInfo?.artifacts?.finalScript}
+              title="Force re-wrap even if script hash unchanged"
+            >
+              Force episode-wrap{stageDone('episode-wrap') ? ' ✓' : ''}
+            </button>
+          </div>
+        {/if}
         <h3>Production stages</h3>
+        <div class="motion-mix">
+          <div class="field-label">Motion mix (mermaid / excalidraw / ui-cards)</div>
+          <p class="muted small">
+            Code, terminal, browser, and illustration are always static. Motion renderer is always MP4.
+            The mix applies at the render-assets stage.
+          </p>
+          <div class="motion-steps">
+            {#each MOTION_RATIO_STEPS as step}
+              <button
+                type="button"
+                class="secondary"
+                class:selected={motionRatioPercent === step}
+                disabled={busy}
+                onclick={() => onMotionRatioChange(step)}
+              >
+                {step === 0 ? '0%' : step === 100 ? '100%' : `${step}%`}
+              </button>
+            {/each}
+          </div>
+          <p class="motion-label">{motionRatioLabel(motionRatioPercent)}</p>
+          {#if motionPreview}
+            <p class="muted small motion-stats">
+              Fixed static: {motionPreview.fixed_static} · already MP4 (motion): {motionPreview.already_motion}
+              · animatable pool: {motionPreview.animatable} → MP4: {motionPreview.selected_animated},
+              PNG/HTML: {motionPreview.selected_static_animatable}
+            </p>
+          {:else if projectInfo?.artifacts?.productionPlan}
+            <p class="muted small">Loading plan…</p>
+          {:else}
+            <p class="muted small">Stats appear after visual-plan</p>
+          {/if}
+        </div>
         <div class="actions">
           {#each productionStages as s}
             <button class="secondary" onclick={() => run(s)} disabled={busy}
@@ -537,28 +1169,45 @@
     {:else if view === 'montage' && projectRoot}
       <div class="card">
         <div class="actions">
-          <button onclick={exportCsv}>Export edit-manifest.csv</button>
+          <button onclick={exportMontageGuide}>Export montage-guide.md</button>
+          <button class="secondary" onclick={exportCsv}>Export edit-manifest.csv</button>
           <button class="secondary" onclick={() => window.ecpe?.openFolder(projectRoot)}
             >Open project folder</button
           >
         </div>
+
+        {#if uncoveredSentences.length > 0}
+          <div class="warning-banner">
+            ⚠ {uncoveredSentences.length} sentence(s) without a rendered asset — see block detail or
+            export montage-guide.md
+          </div>
+        {/if}
+
         <div class="grid-2">
           <div>
-            <h3>Script segments</h3>
-            {#if segments?.segments}
-              {#each segments.segments as seg}
+            <h3>Script blocks</h3>
+            {#if blocks?.blocks}
+              {#each blocks.blocks as block}
                 <button
                   type="button"
                   class="segment-card"
-                  class:selected={selectedSegmentId === seg.id}
-                  onclick={() => (selectedSegmentId = seg.id)}
+                  class:selected={selectedBlockId === block.block_id}
+                  onclick={() => {
+                    selectedBlockId = block.block_id;
+                    selectedEntryIndex = null;
+                  }}
                 >
-                  <strong>{seg.id}</strong> {seg.start_timecode}–{seg.end_timecode}
-                  <p class="muted">{seg.text}</p>
+                  <strong>{block.block_id}</strong> — {block.title}
+                  <p class="muted">
+                    {block.sentences.length} sentences · {block.word_count} words · ~{Math.round(
+                      (block.estimated_duration_sec / 60) * 10,
+                    ) / 10} min
+                  </p>
+                  <p class="muted">{block.narration_text.slice(0, 200)}…</p>
                 </button>
               {/each}
             {:else}
-              <p class="muted">Run the segment stage first</p>
+              <p class="muted">Run the segment stage first (v2 blocks)</p>
             {/if}
           </div>
           <div>
@@ -567,18 +1216,20 @@
               <table>
                 <thead>
                   <tr>
-                    <th>In</th><th>Out</th><th>Asset</th><th>Status</th>
+                    <th>Block</th><th>Scene</th><th>Sentences</th><th>Asset</th><th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {#each manifest.entries as row}
+                  {#each manifest.entries as row, i}
                     <tr
-                      class:selected={selectedSegmentId && row.segment_ids?.includes(selectedSegmentId)}
-                      onclick={() => (selectedSegmentId = row.segment_ids?.[0] ?? null)}
+                      class:selected={selectedEntryIndex === i}
+                      class:dimmed={selectedBlockId && row.block_id !== selectedBlockId}
+                      onclick={() => selectManifestRow(row, i)}
                     >
-                      <td>{row.timecode_in}</td>
-                      <td>{row.timecode_out}</td>
-                      <td>{row.asset_path || '—'}</td>
+                      <td>{row.block_id}</td>
+                      <td>{row.scene_order}</td>
+                      <td>{row.sentence_start}–{row.sentence_end}</td>
+                      <td class="asset-cell">{row.asset_path || '—'}</td>
                       <td>{row.status}</td>
                     </tr>
                   {/each}
@@ -589,6 +1240,47 @@
             {/if}
           </div>
         </div>
+
+        {#if selectedEntry || selectedBlock}
+          <div class="card detail-panel">
+            <h3>Selection detail</h3>
+            {#if selectedEntry}
+              <p><strong>Asset:</strong> <code>{selectedEntry.asset_path || 'FAILED'}</code></p>
+              <p><strong>Renderer:</strong> {selectedEntry.renderer} · <strong>Hold:</strong> ~{selectedEntry.estimated_hold_sec}s</p>
+              <p><strong>Sentences:</strong> {selectedEntry.sentence_start}–{selectedEntry.sentence_end}</p>
+              {#if selectedEntry.narration_span}
+                <blockquote class="narration-span">{selectedEntry.narration_span}</blockquote>
+              {/if}
+              {#if selectedEntry.visual}
+                <p class="muted"><strong>Visual:</strong> {selectedEntry.visual}</p>
+              {/if}
+              {#if selectedEntry.insert_hint}
+                <p class="muted"><strong>Insert hint:</strong> {selectedEntry.insert_hint}</p>
+              {/if}
+            {/if}
+            {#if selectedBlock}
+              <h4>Block {selectedBlock.block_id}: {selectedBlock.title}</h4>
+              {#if selectedBlock.on_screen_action}
+                <p class="muted"><strong>On screen:</strong> {selectedBlock.on_screen_action}</p>
+              {/if}
+              <div class="sentence-list">
+                {#each selectedBlock.sentences as s}
+                  {@const covered = manifest?.entries?.some(
+                    (e: { block_id: string; status: string; sentence_start: number; sentence_end: number }) =>
+                      e.block_id === selectedBlock.block_id &&
+                      e.status === 'ok' &&
+                      e.sentence_start <= s.index &&
+                      e.sentence_end >= s.index,
+                  )}
+                  <div class="sentence-row" class:uncovered={!covered} class:highlighted={selectedEntry && selectedEntry.sentence_start <= s.index && selectedEntry.sentence_end >= s.index}>
+                    <span class="sentence-idx">[{s.index}]</span>
+                    {s.text}
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        {/if}
       </div>
     {:else if view === 'settings'}
       <div class="card">
@@ -596,10 +1288,18 @@
 
         <div class="folder-row">
           <div>
-            <div class="field-label">Default projects folder</div>
-            <div class="folder-path">{settings?.defaultProjectsRoot ?? '…'}</div>
+            <div class="field-label">Courses folder</div>
+            <div class="folder-path">{settings?.defaultCoursesRoot ?? DEFAULT_COURSES_FOLDER}</div>
           </div>
-          <button class="secondary" onclick={() => pickProjectsFolder('settings')}>Choose folder…</button>
+          <button class="secondary" onclick={() => pickTargetFolder('settings-courses')}>Choose folder…</button>
+        </div>
+
+        <div class="folder-row">
+          <div>
+            <div class="field-label">Singles folder</div>
+            <div class="folder-path">{settings?.defaultSinglesRoot ?? DEFAULT_SINGLES_FOLDER}</div>
+          </div>
+          <button class="secondary" onclick={() => pickTargetFolder('settings-singles')}>Choose folder…</button>
         </div>
 
         <h3>LLM status</h3>

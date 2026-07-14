@@ -66,3 +66,9 @@ If no budget table: use `target_length_minutes × words_per_minute` as total cap
 
 Technical Credibility + Viewer Value. No AI filler phrases.
 Assume software engineers who want practical AI knowledge.
+
+## Narrative balance
+When the user message includes a **Narrative balance** section, follow it strictly for theory depth, practice emphasis, topic boosts, and real-world examples. Honor the creator roadmap block structure and timecodes.
+
+## Real-world examples (mandatory)
+No vacuum or generic placeholder examples unless the roadmap names them. Use the actual project, stack, and scenarios from the roadmap and application state.

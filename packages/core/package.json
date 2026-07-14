@@ -21,6 +21,7 @@
     "@ecpe/prompts": "workspace:*",
     "@ecpe/schemas": "workspace:*",
     "@ecpe/segmentation": "workspace:*",
+    "jsonrepair": "^3.15.0",
     "yaml": "^2.8.0"
   },
   "devDependencies": {

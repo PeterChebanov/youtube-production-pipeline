@@ -6,6 +6,12 @@ export {
   type PromptContext,
 } from './load.js';
 export {
+  buildNarrativeBalanceAppendix,
+  parseBoostList,
+  readNarrativeFromVideo,
+  type NarrativeBalance,
+} from './narrative-balance.js';
+export {
   expandContractionsForNarration,
   expandContractionsInText,
 } from './expand-contractions.js';

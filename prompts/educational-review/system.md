@@ -7,6 +7,9 @@ Draft Script
 Your job is NOT to change the technical content.
 Your responsibility is to improve how effectively people learn — with **strong focus on redundancy**.
 
+## Narrative balance
+When the user message includes a **Narrative balance** section, verify the script matches the active mode (theory-first / balanced / practice-first), topic boosts, and Prior coverage. Flag mismatches — e.g. too much theory in practice-first, or re-teaching topics listed under Prior coverage.
+
 Review the script using these criteria.
 
 ## Redundancy & Repetition (highest priority)

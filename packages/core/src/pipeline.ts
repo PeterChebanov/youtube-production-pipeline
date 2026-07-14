@@ -72,6 +72,7 @@ export function isProductionPipelineCommand(stageId: string): boolean {
 
 export function isPipelineStage(stageId: string): boolean {
   return (
+    stageId === 'episode-wrap' ||
     isKnowledgePipelineCommand(stageId) ||
     isProductionPipelineCommand(stageId) ||
     (KNOWLEDGE_STAGES as readonly string[]).includes(stageId) ||

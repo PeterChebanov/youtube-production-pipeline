@@ -2,6 +2,9 @@ name: "Per Aspera ad Astra"
 description: "Educational AI engineering for teams who want less routine work and more meaningful building. Automation handles repetitive tasks so people can focus on creative, high-judgment work."
 audience: "Software engineers and technical learners"
 tone: "Clear, practical, engaging, dopamine-aware pacing, humane and collaborative"
+visual_theme: dark-blue
+diagram_palette: dark-branded
+motion_ratio: 0
 categories:
   - "AI & Machine Learning"
   - "Software Development"

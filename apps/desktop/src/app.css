@@ -22,15 +22,48 @@ select {
 
 button {
   cursor: pointer;
-  background: #1d4ed8;
+  background: #8b5cf6;
   color: white;
   border: none;
   border-radius: 8px;
   padding: 8px 12px;
 }
 
-button.secondary {
-  background: #334155;
+button:hover:not(:disabled) {
+  background: #7c3aed;
+}
+
+button.secondary.selected {
+  background: #8b5cf6;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.45);
+}
+
+.motion-mix {
+  margin: 12px 0 16px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid #334155;
+}
+
+.motion-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.motion-label {
+  margin: 6px 0 0;
+  font-weight: 600;
+}
+
+.motion-stats {
+  margin-top: 8px;
+}
+
+p.small {
+  font-size: 0.9rem;
 }
 
 button:disabled {
@@ -273,6 +306,75 @@ tr.selected {
   outline: 2px solid #3b82f6;
 }
 
+.warning-banner {
+  background: #422006;
+  border: 1px solid #d97706;
+  color: #fde68a;
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+
+tr.dimmed {
+  opacity: 0.45;
+}
+
+tbody tr {
+  cursor: pointer;
+}
+
+.asset-cell {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  max-width: 220px;
+  word-break: break-all;
+}
+
+.detail-panel {
+  margin-top: 16px;
+}
+
+.narration-span {
+  border-left: 3px solid #3b82f6;
+  margin: 12px 0;
+  padding: 8px 16px;
+  font-style: italic;
+  color: #cbd5e1;
+  background: #0f172a;
+  border-radius: 0 8px 8px 0;
+}
+
+.sentence-list {
+  margin-top: 12px;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.sentence-row {
+  padding: 6px 8px;
+  border-radius: 6px;
+  margin-bottom: 4px;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.sentence-row.uncovered {
+  background: rgba(127, 29, 29, 0.35);
+  border-left: 3px solid #ef4444;
+}
+
+.sentence-row.highlighted {
+  background: #172554;
+  border-left: 3px solid #3b82f6;
+}
+
+.sentence-idx {
+  font-family: ui-monospace, monospace;
+  color: #94a3b8;
+  margin-right: 8px;
+}
+
 label {
   display: block;
   margin-bottom: 12px;
@@ -283,4 +385,112 @@ label {
   gap: 8px;
   flex-wrap: wrap;
   margin: 12px 0;
+}
+
+.home-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.home-actions button {
+  padding: 16px;
+  font-size: 1rem;
+}
+
+.breadcrumb {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 0 0 12px;
+  word-break: break-all;
+}
+
+.breadcrumb strong {
+  color: #e2e8f0;
+}
+
+.course-schema {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.episode-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 12px 14px;
+  color: inherit;
+}
+
+.episode-card:hover:not(:disabled) {
+  border-color: #8b5cf6;
+}
+
+.episode-card .ep-num {
+  font-family: ui-monospace, monospace;
+  font-weight: 700;
+  color: #a78bfa;
+  min-width: 2.5rem;
+}
+
+.episode-card .ep-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.episode-card .ep-title {
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.episode-card .ep-meta {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.status-pill {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.status-pill.planned {
+  background: #1e293b;
+  color: #94a3b8;
+}
+
+.status-pill.in_progress {
+  background: #422006;
+  color: #fde68a;
+}
+
+.status-pill.done {
+  background: #14532d;
+  color: #bbf7d0;
+}
+
+.artifact-dots {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.artifact-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #334155;
+}
+
+.artifact-dot.on {
+  background: #8b5cf6;
 }

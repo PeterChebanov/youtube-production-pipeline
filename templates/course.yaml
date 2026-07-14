@@ -1,0 +1,5 @@
+name: "My Course"
+slug: my-course
+type: build-along
+description: ""
+episodes_dir: episodes

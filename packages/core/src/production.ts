@@ -1,14 +1,20 @@
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { jsonrepair } from 'jsonrepair';
 import {
   ChannelSchema,
   VideoSchema,
   ProductionPlanSchema,
+  EditManifestSchema,
+  type ProductionPlan,
+  type EditManifestEntry,
   parseYamlFile,
 } from '@ecpe/schemas';
 import { buildPrompts, type PromptContext } from '@ecpe/prompts';
-import { complete, loadEnv, type LlmProviderId } from '@ecpe/llm';
-import { renderAssets } from '@ecpe/production-engine';
+import { complete, getLlmConfig, loadEnv, type LlmProviderId } from '@ecpe/llm';
+import { renderAssets, buildAnimationPlan } from '@ecpe/production-engine';
+import { NarrationSegmentsSchema } from '@ecpe/schemas';
+import { formatBlocksForPrompt } from '@ecpe/segmentation';
 import {
   ARTIFACTS,
   PRODUCTION_STAGES,
@@ -18,6 +24,13 @@ import {
 } from './artifacts.js';
 import { maybeArchiveArtifact } from './archive.js';
 import { openProject, readArtifact, readSourceBrief, writeArtifact } from './project.js';
+import { readCourseContextForEpisode } from './course.js';
+import { reportProgress } from './progress.js';
+import {
+  formatPlanLimitsTable,
+  formatValidationFixPrompt,
+  validateProductionPlan,
+} from './plan-validate.js';
 import { updateProjectState } from './stage.js';
 
 const PRODUCTION_LLM_STAGES = new Set<ProductionStageId>(['visual-plan']);
@@ -28,12 +41,19 @@ const PRODUCTION_INPUTS: Record<ProductionStageId, ArtifactKey[]> = {
   'render-scene': ['productionPlan'],
 };
 
+export { buildAnimationPlan } from '@ecpe/production-engine';
+export type { AnimationPlanStats } from '@ecpe/production-engine';
+
 export interface RunProductionOptions {
   projectPath: string;
   provider?: LlmProviderId;
   model?: string;
   revisionNotes?: string;
   sceneId?: string;
+  /** Render only scenes for these renderers (render-assets). */
+  renderers?: string[];
+  /** Overrides channel.yaml motion_ratio for render-assets (0–1). */
+  motionRatio?: number;
 }
 
 export interface RunProductionResult {
@@ -42,6 +62,7 @@ export interface RunProductionResult {
   content: string;
   rendered?: number;
   failed?: number;
+  animationStats?: import('@ecpe/production-engine').AnimationPlanStats;
 }
 
 function isProductionStage(stageId: string): stageId is ProductionStageId {
@@ -75,17 +96,129 @@ async function assertProductionInputs(
   }
 }
 
+function extractJsonText(raw: string): string {
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) return fenced[1].trim();
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start >= 0 && end > start) return raw.slice(start, end + 1);
+  return raw.trim();
+}
+
 function extractJsonFromLlm(text: string): unknown {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenced?.[1]) {
-    return JSON.parse(fenced[1].trim());
+  const jsonText = extractJsonText(text);
+  try {
+    return JSON.parse(jsonText);
+  } catch {
+    return JSON.parse(jsonrepair(jsonText));
   }
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start >= 0 && end > start) {
-    return JSON.parse(text.slice(start, end + 1));
+}
+
+function parseProductionPlanFromLlm(raw: string): ProductionPlan {
+  const data = extractJsonFromLlm(raw);
+  return ProductionPlanSchema.parse(data);
+}
+
+async function saveVisualPlanRaw(projectPath: string, raw: string, label: string): Promise<string> {
+  const logsDir = path.join(projectPath, 'logs');
+  await mkdir(logsDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filePath = path.join(logsDir, `visual-plan-raw-${label}-${stamp}.txt`);
+  await writeFile(filePath, raw, 'utf8');
+  return filePath;
+}
+
+const VISUAL_PLAN_MAX_ATTEMPTS = 3;
+
+async function completeVisualPlan(
+  projectPath: string,
+  options: RunProductionOptions,
+): Promise<ProductionPlan> {
+  const context = await buildVisualPlanContext(projectPath, options.revisionNotes);
+  const segmentsRaw = context.artifacts![ARTIFACTS.narrationSegments];
+  const segments = NarrationSegmentsSchema.parse(JSON.parse(segmentsRaw));
+
+  const { system, user: baseUser } = await buildPrompts('visual-designer', context, projectPath);
+  loadEnv();
+  const visualTimeoutS = getLlmConfig().visualPlanTimeoutS;
+
+  let user = baseUser;
+  let lastValidationErrors: string[] = [];
+
+  for (let attempt = 0; attempt < VISUAL_PLAN_MAX_ATTEMPTS; attempt++) {
+    reportProgress({
+      stage: 'visual-plan',
+      message:
+        attempt === 0
+          ? 'Calling Visual Designer…'
+          : `Visual plan retry ${attempt}/${VISUAL_PLAN_MAX_ATTEMPTS - 1}…`,
+    });
+
+    const raw = await complete({
+      provider: options.provider,
+      model: options.model,
+      system,
+      user,
+      maxTokens: 16384,
+      timeoutS: visualTimeoutS,
+    });
+
+    let plan: ProductionPlan;
+    try {
+      plan = parseProductionPlanFromLlm(raw);
+    } catch (parseErr) {
+      const rawPath = await saveVisualPlanRaw(projectPath, raw, `parse-failed-${attempt}`);
+      const errMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
+      reportProgress({
+        stage: 'visual-plan',
+        message: `JSON parse failed (${errMsg}). Raw: ${rawPath}`,
+      });
+      if (attempt >= VISUAL_PLAN_MAX_ATTEMPTS - 1) throw parseErr;
+
+      user = `${baseUser}
+
+---
+The previous response was invalid JSON (${errMsg}).
+Return ONLY corrected valid JSON for production-plan.json version 2.
+No markdown fences, no commentary. Fix trailing commas, unclosed strings, and schema fields.`;
+      continue;
+    }
+
+    const validation = validateProductionPlan(plan, segments);
+    if (validation.warnings.length > 0) {
+      reportProgress({
+        stage: 'visual-plan',
+        message: `Plan warnings: ${validation.warnings.slice(0, 3).join('; ')}${validation.warnings.length > 3 ? '…' : ''}`,
+      });
+    }
+
+    if (validation.ok) {
+      reportProgress({
+        stage: 'visual-plan',
+        message: `Plan OK — ${plan.scenes.length} scenes across ${new Set(plan.scenes.map((s) => s.block_id)).size} blocks`,
+      });
+      return plan;
+    }
+
+    lastValidationErrors = validation.errors;
+    const rawPath = await saveVisualPlanRaw(projectPath, raw, `validation-failed-${attempt}`);
+    reportProgress({
+      stage: 'visual-plan',
+      message: `Validation failed (${validation.errors.length} errors). Raw: ${rawPath}`,
+    });
+
+    if (attempt >= VISUAL_PLAN_MAX_ATTEMPTS - 1) {
+      throw new Error(
+        `Production plan validation failed after ${VISUAL_PLAN_MAX_ATTEMPTS} attempts:\n${validation.errors.map((e) => `- ${e}`).join('\n')}`,
+      );
+    }
+
+    user = `${baseUser}\n\n${formatValidationFixPrompt(validation.errors, validation.warnings)}`;
   }
-  return JSON.parse(text.trim());
+
+  throw new Error(
+    `Production plan validation failed:\n${lastValidationErrors.map((e) => `- ${e}`).join('\n')}`,
+  );
 }
 
 async function buildVisualPlanContext(
@@ -108,8 +241,19 @@ async function buildVisualPlanContext(
     ARTIFACTS.narrationSegments,
   );
 
+  const segmentsRaw = context.artifacts![ARTIFACTS.narrationSegments];
+  const segments = NarrationSegmentsSchema.parse(JSON.parse(segmentsRaw));
+  context.blocksSummary = formatBlocksForPrompt(segments);
+  context.planLimitsTable = formatPlanLimitsTable(segments);
+
   const sourceBrief = await readSourceBrief(projectPath);
   if (sourceBrief) context.sourceBrief = sourceBrief;
+
+  const courseCtx = await readCourseContextForEpisode(projectPath);
+  if (courseCtx.applicationState) context.applicationState = courseCtx.applicationState;
+  if (courseCtx.priorCoverage) context.priorCoverage = courseCtx.priorCoverage;
+  if (courseCtx.courseName) context.courseName = courseCtx.courseName;
+  if (courseCtx.episodeNumber) context.episodeNumber = courseCtx.episodeNumber;
 
   return context;
 }
@@ -121,17 +265,8 @@ async function runVisualPlanStage(
   await assertProductionInputs(projectPath, 'visual-plan');
 
   loadEnv();
-  const context = await buildVisualPlanContext(projectPath, options.revisionNotes);
-  const { system, user } = await buildPrompts('visual-designer', context, projectPath);
 
-  const raw = await complete({
-    provider: options.provider,
-    model: options.model,
-    system,
-    user,
-  });
-
-  const parsed = ProductionPlanSchema.parse(extractJsonFromLlm(raw));
+  const parsed = await completeVisualPlan(projectPath, options);
   const content = JSON.stringify(parsed, null, 2);
   const outputFile = PRODUCTION_STAGE_OUTPUT['visual-plan'];
 
@@ -152,9 +287,29 @@ async function runRenderAssetsStage(
   const planRaw = await readArtifact(projectPath, ARTIFACTS.productionPlan);
   const plan = ProductionPlanSchema.parse(JSON.parse(planRaw));
 
-  const { manifest, rendered, failed } = await renderAssets(plan, {
+  const channelRaw = await readArtifact(projectPath, ARTIFACTS.channel);
+  const channel = parseYamlFile(channelRaw, ChannelSchema);
+
+  const partialRender = Boolean(options.sceneId?.trim() || options.renderers?.length);
+  let previousManifestEntries: EditManifestEntry[] | undefined;
+  if (partialRender) {
+    try {
+      const manifestRaw = await readArtifact(projectPath, ARTIFACTS.editManifest);
+      previousManifestEntries = EditManifestSchema.parse(JSON.parse(manifestRaw)).entries;
+    } catch {
+      previousManifestEntries = undefined;
+    }
+  }
+
+  const { manifest, rendered, failed, animationStats } = await renderAssets(plan, {
     projectRoot: projectPath,
     sceneId: options.sceneId,
+    renderers: options.renderers,
+    previousManifestEntries,
+    themeId: channel.visual_theme,
+    diagramPalette: channel.diagram_palette,
+    motionRatio: options.motionRatio ?? 1,
+    animationSeed: path.basename(projectPath),
   });
 
   const content = JSON.stringify(manifest, null, 2);
@@ -164,7 +319,7 @@ async function runRenderAssetsStage(
   await writeArtifact(projectPath, outputFile, content);
   await updateProjectState(projectPath, stageId);
 
-  return { stageId, outputFile, content, rendered, failed };
+  return { stageId, outputFile, content, rendered, failed, animationStats };
 }
 
 export async function runProductionStage(
@@ -200,4 +355,13 @@ export async function runProductionStage(
   }
 
   throw new Error(`Unsupported production stage: ${stageId}`);
+}
+
+export async function previewMotionPlan(
+  projectPath: string,
+  motionRatio: number,
+): Promise<import('@ecpe/production-engine').AnimationPlanStats> {
+  const planRaw = await readArtifact(projectPath, ARTIFACTS.productionPlan);
+  const plan = ProductionPlanSchema.parse(JSON.parse(planRaw));
+  return buildAnimationPlan(plan.scenes, motionRatio).stats;
 }

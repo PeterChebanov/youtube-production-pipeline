@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Handlebars from 'handlebars';
 import { enrichWordBudgetContext } from './word-budget.js';
+import { buildNarrativeBalanceAppendix } from './narrative-balance.js';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const GLOBAL_PROMPTS_ROOT = path.join(REPO_ROOT, 'prompts');
@@ -15,10 +16,22 @@ export interface PromptContext {
   sourceBrief?: string;
   /** Markdown table injected when sourceBrief contains `[M:SS–M:SS]` blocks. */
   wordBudgetTable?: string;
+  /** Formatted narration blocks table (v2 segmentation) for visual-designer. */
+  blocksSummary?: string;
+  /** Per-block scene/hold limits table for visual-designer validation hints. */
+  planLimitsTable?: string;
   /** Sum of per-block narration word targets. */
   totalNarrationWords?: number;
   artifacts?: Record<string, string>;
+  /** Rolling application context for build-along courses */
+  applicationState?: string;
+  courseName?: string;
+  episodeNumber?: number;
   revisionNotes?: string;
+  /** Production plan JSON for episode-wrap stage */
+  productionPlan?: string;
+  /** Course-level assumed prior knowledge from other channel content */
+  priorCoverage?: string;
   /** ISO date YYYY-MM-DD — injected automatically in buildPrompts. */
   currentDate?: string;
   currentYear?: number;
@@ -84,6 +97,18 @@ export async function buildPrompts(
 
   if (context.revisionNotes?.trim()) {
     user += `\n\n---\nRevision notes from the creator:\n${context.revisionNotes.trim()}`;
+  }
+
+  if (context.applicationState?.trim()) {
+    const header = context.courseName
+      ? `Application state (${context.courseName}${context.episodeNumber ? ` · before episode ${context.episodeNumber}` : ''})`
+      : 'Application state (course context)';
+    user += `\n\n---\n## ${header}\n\n${context.applicationState.trim()}`;
+  }
+
+  const narrativeAppendix = buildNarrativeBalanceAppendix(context.video, context.priorCoverage);
+  if (narrativeAppendix) {
+    user += `\n\n---\n${narrativeAppendix}`;
   }
 
   user = appendDateContextFooter(user, context);

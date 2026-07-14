@@ -26,6 +26,7 @@ export async function anthropicComplete(options: {
   model?: string;
   maxTokens?: number;
   temperature?: number;
+  timeoutS?: number;
 }): Promise<string> {
   const cfg = getLlmConfig();
   if (!cfg.anthropicApiKey) {
@@ -34,7 +35,8 @@ export async function anthropicComplete(options: {
 
   const url = anthropicMessagesUrl();
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), cfg.httpTimeoutS * 1000);
+  const timeoutSec = options.timeoutS ?? cfg.httpTimeoutS;
+  const timeout = setTimeout(() => controller.abort(), timeoutSec * 1000);
 
   try {
     const response = await fetch(url, {
@@ -76,7 +78,7 @@ export async function anthropicComplete(options: {
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
       throw new Error(
-        `Anthropic request timed out after ${cfg.httpTimeoutS}s. Increase HTTP_TIMEOUT_S in .env or run the stage alone.`,
+        `Anthropic request timed out after ${timeoutSec}s. Increase HTTP_TIMEOUT_S or VISUAL_PLAN_TIMEOUT_S in .env, or run the stage alone.`,
       );
     }
     throw err;

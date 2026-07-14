@@ -7,5 +7,6 @@ export function parseYamlFile<S extends ZodTypeAny>(content: string, schema: S):
 }
 
 export * from './channel-video.js';
+export * from './course.js';
 export * from './narration-segments.js';
 export * from './production-plan.js';

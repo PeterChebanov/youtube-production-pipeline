@@ -11,6 +11,7 @@
 - Title: {{video.title}}
 - Topic: {{video.topic}}
 - Target length: {{video.target_length_minutes}} minutes
+- Words per minute (density estimate only): {{video.words_per_minute}}
 {{#if video.notes}}
 - Notes: {{video.notes}}
 {{/if}}
@@ -26,8 +27,19 @@ Use shooting format, on-screen actions, and visual block plan when choosing rend
 ## Final Script
 {{lookup artifacts "final-script.md"}}
 
-## Narration Segments
-{{lookup artifacts "narration-segments.json"}}
+{{#if blocksSummary}}
+## Narration Blocks (semantic — plan scenes per block + sentence span)
 
-Create production-plan.json with scenes tied to segment_ids and timecodes.
-Choose the best renderer per scene. Output only valid JSON.
+{{blocksSummary}}
+
+{{/if}}
+{{#if planLimitsTable}}
+{{planLimitsTable}}
+
+Validation will reject sparse or unsplit plans — every sentence must be covered exactly once.
+
+{{/if}}
+
+Create production-plan.json version 2.
+Each scene must reference block_id, scene_order, sentence_start, sentence_end, and narration_span.
+Output only valid JSON.

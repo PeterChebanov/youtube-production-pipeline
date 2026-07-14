@@ -1,0 +1,23 @@
+## Course
+- Name: {{courseName}}
+- Episode: {{episodeNumber}}
+- Title: {{video.title}}
+- Topic: {{video.topic}}
+
+## Current application state (merge into this — do not discard prior episodes)
+{{applicationState}}
+
+{{#if sourceBrief}}
+## This episode roadmap
+{{sourceBrief}}
+
+{{/if}}
+## Final script (this episode)
+{{lookup artifacts "final-script.md"}}
+
+{{#if productionPlan}}
+## Production plan (implementation scenes — use for concrete Implemented details)
+{{productionPlan}}
+
+{{/if}}
+Produce the updated application-state.md for the whole course after this episode.

@@ -8,7 +8,7 @@ Local-first desktop assistant for educational YouTube production: **Knowledge Pi
 - Packages: `@ecpe/schemas`, `@ecpe/core`, `@ecpe/llm`, `@ecpe/prompts`, `@ecpe/segmentation`, `@ecpe/production-engine`, `@ecpe/cli`
 - Desktop: **Electron + Svelte** (`apps/desktop`)
 
-See [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) for the full roadmap.
+See [`docs/000_SYSTEM_ARCHITECTURE.md`](docs/000_SYSTEM_ARCHITECTURE.md) (design) and [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) (phases).
 
 ## Setup
 
@@ -60,15 +60,18 @@ Each project contains `channel.yaml`, `video.yaml`, pipeline artifacts, `assets/
 
 ## Renderers (production-engine)
 
-| Renderer | Output |
-|----------|--------|
-| mermaid | SVG diagram |
-| code | HTML (Shiki) |
-| terminal | HTML mock |
-| browser | PNG (Playwright) or HTML fallback |
-| ui-cards | HTML cards |
-| illustration | `.prompt.txt` for Leonardo |
-| motion | JSON spec for Motion Canvas |
+| Renderer | Output | Status |
+|----------|--------|--------|
+| mermaid | SVG diagram | ✅ |
+| code | HTML (Shiki) | ✅ |
+| terminal | HTML mock | ✅ |
+| browser | PNG (Playwright) or HTML fallback | ✅ |
+| ui-cards | HTML cards | ✅ |
+| excalidraw | PNG (sketch-style) | ✅ |
+| motion | MP4 (Motion Canvas) | ⚠️ stub → target MP4 |
+| illustration | PNG (Leonardo) | ⚠️ `.prompt.txt` only; API deferred |
+
+Montage is **block-first** (semantic script blocks + sentence spans), not model timecodes. See architecture doc.
 
 ## First video workflow
 
@@ -77,4 +80,4 @@ Each project contains `channel.yaml`, `video.yaml`, pipeline artifacts, `assets/
 3. **Run knowledge** → `final-script.md` + `narration-segments.json`
 4. **Run production** → `production-plan.json` → assets + `edit-manifest.json`
 5. Export **edit-manifest.csv** for DaVinci Resolve
-6. Record A-roll, edit in Resolve using manifest timecodes + asset paths
+6. Record A-roll, edit in Resolve using manifest **block → asset → sentence span** mapping

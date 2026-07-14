@@ -16,6 +16,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@ecpe/schemas": "workspace:*",
     "handlebars": "^4.7.8"
   },
   "devDependencies": {

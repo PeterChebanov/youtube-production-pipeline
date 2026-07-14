@@ -3,4 +3,7 @@ topic: "What this video covers in one sentence"
 target_length_minutes: 16
 words_per_minute: 133
 format: educational
+narrative_balance: theory-first
+theory_boost: ""
+practice_boost: ""
 notes: ""

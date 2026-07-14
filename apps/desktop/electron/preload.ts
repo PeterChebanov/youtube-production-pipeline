@@ -4,6 +4,16 @@ contextBridge.exposeInMainWorld('ecpe', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (patch: unknown) => ipcRenderer.invoke('settings:save', patch),
   createProject: (input: unknown) => ipcRenderer.invoke('project:create', input),
+  createCourse: (input: unknown) => ipcRenderer.invoke('course:create', input),
+  loadCourse: (root: string) => ipcRenderer.invoke('course:load', root),
+  getCourseInfo: (root: string) => ipcRenderer.invoke('course:info', root),
+  createEpisode: (input: unknown) => ipcRenderer.invoke('course:createEpisode', input),
+  getApplicationState: (root: string) => ipcRenderer.invoke('course:getApplicationState', root),
+  saveApplicationState: (root: string, content: string) =>
+    ipcRenderer.invoke('course:saveApplicationState', root, content),
+  getPriorCoverage: (root: string) => ipcRenderer.invoke('course:getPriorCoverage', root),
+  savePriorCoverage: (root: string, content: string) =>
+    ipcRenderer.invoke('course:savePriorCoverage', root, content),
   getProjectInfo: (root: string) => ipcRenderer.invoke('project:info', root),
   pickDirectory: (startPath?: string) => ipcRenderer.invoke('project:pickDirectory', startPath),
   pickTextFile: () => ipcRenderer.invoke('project:pickTextFile'),
@@ -17,7 +27,10 @@ contextBridge.exposeInMainWorld('ecpe', {
     ipcRenderer.invoke('channelVideo:save', root, channelYaml, videoYaml),
   runPipeline: (stageId: string, options: unknown) =>
     ipcRenderer.invoke('pipeline:run', stageId, options),
+  previewMotionPlan: (root: string, motionRatio: number) =>
+    ipcRenderer.invoke('motion:preview', root, motionRatio),
   exportManifestCsv: (root: string) => ipcRenderer.invoke('manifest:exportCsv', root),
+  exportMontageGuide: (root: string) => ipcRenderer.invoke('manifest:exportMontageGuide', root),
   llmStatus: () => ipcRenderer.invoke('llm:status'),
   quitApp: () => ipcRenderer.invoke('app:quit'),
   onProgress: (cb: (payload: { stage: string; message: string }) => void) => {

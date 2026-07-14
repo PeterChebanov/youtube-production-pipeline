@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export const RENDERER_IDS = [
   'mermaid',
+  'excalidraw',
   'code',
   'terminal',
   'browser',
@@ -14,34 +15,39 @@ export type RendererId = (typeof RENDERER_IDS)[number];
 
 export const ProductionSceneSchema = z.object({
   scene_id: z.string().min(1),
-  segment_ids: z.array(z.string()).min(1),
-  narration_excerpt: z.string(),
-  start_timecode: z.string(),
-  end_timecode: z.string(),
-  duration_sec: z.number().nonnegative(),
+  block_id: z.string().min(1),
+  scene_order: z.number().int().positive(),
+  sentence_start: z.number().int().positive(),
+  sentence_end: z.number().int().positive(),
+  narration_span: z.string().min(1),
+  estimated_hold_sec: z.number().nonnegative(),
   purpose: z.string(),
   visual: z.string(),
   renderer: z.enum(RENDERER_IDS),
   insert_hint: z.string().default(''),
+  engagement_tactic: z.string().nullable().optional(),
   data: z.record(z.string(), z.unknown()),
 });
 
 export type ProductionScene = z.infer<typeof ProductionSceneSchema>;
 
 export const ProductionPlanSchema = z.object({
-  version: z.literal(1),
+  version: z.literal(2),
   scenes: z.array(ProductionSceneSchema).min(1),
 });
 
 export type ProductionPlan = z.infer<typeof ProductionPlanSchema>;
 
 export const EditManifestEntrySchema = z.object({
-  timecode_in: z.string(),
-  timecode_out: z.string(),
-  duration_sec: z.number().nonnegative(),
-  segment_ids: z.array(z.string()),
-  narration_excerpt: z.string(),
+  block_id: z.string(),
+  scene_order: z.number().int().positive(),
+  sentence_start: z.number().int().positive(),
+  sentence_end: z.number().int().positive(),
+  narration_span: z.string(),
+  estimated_hold_sec: z.number().nonnegative(),
   asset_path: z.string(),
+  /** Final-frame PNG in assets/<renderer>/static/ when MP4 reveal was rendered. */
+  static_asset_path: z.string().optional(),
   renderer: z.string(),
   visual: z.string(),
   status: z.enum(['ok', 'failed', 'skipped']),
@@ -52,7 +58,7 @@ export const EditManifestEntrySchema = z.object({
 export type EditManifestEntry = z.infer<typeof EditManifestEntrySchema>;
 
 export const EditManifestSchema = z.object({
-  version: z.literal(1),
+  version: z.literal(2),
   entries: z.array(EditManifestEntrySchema),
 });
 
@@ -60,11 +66,12 @@ export type EditManifest = z.infer<typeof EditManifestSchema>;
 
 export function editManifestToCsv(manifest: EditManifest): string {
   const headers = [
-    'timecode_in',
-    'timecode_out',
-    'duration_sec',
-    'segment_ids',
-    'narration_excerpt',
+    'block_id',
+    'scene_order',
+    'sentence_start',
+    'sentence_end',
+    'narration_span',
+    'estimated_hold_sec',
     'asset_path',
     'renderer',
     'visual',
@@ -74,11 +81,12 @@ export function editManifestToCsv(manifest: EditManifest): string {
   ];
   const rows = manifest.entries.map((e) =>
     [
-      e.timecode_in,
-      e.timecode_out,
-      String(e.duration_sec),
-      e.segment_ids.join(';'),
-      csvEscape(e.narration_excerpt),
+      e.block_id,
+      String(e.scene_order),
+      String(e.sentence_start),
+      String(e.sentence_end),
+      csvEscape(e.narration_span),
+      String(e.estimated_hold_sec),
       e.asset_path,
       e.renderer,
       e.visual,
