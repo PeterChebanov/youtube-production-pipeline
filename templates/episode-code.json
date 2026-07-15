@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "repo_url": "https://github.com/you/your-app",
+  "repo_path": "/absolute/path/to/your-app",
+  "title": "Episode title",
+  "has_code": true,
+  "git_checkpoint": "ep01",
+  "new_scope": [],
+  "cumulative_scope": [],
+  "demo": {
+    "commands": [],
+    "summary": "What to run on camera at the end of this episode"
+  },
+  "script_sources": [],
+  "illustrative_allowed": [],
+  "notes": ""
+}

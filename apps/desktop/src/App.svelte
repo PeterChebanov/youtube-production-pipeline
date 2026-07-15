@@ -20,6 +20,8 @@
   let newEpisodeTitle = $state('');
   let newEpisodeTopic = $state('');
   let newEpisodeBrief = $state('');
+  let newEpisodeCode = $state('');
+  let newFirstEpisodeCode = $state('');
   let logs = $state<string[]>([]);
   let busy = $state(false);
   let revision = $state('');
@@ -30,6 +32,7 @@
   let newTopic = $state('');
   let newDescription = $state('');
   let newCourseType = $state<'build-along' | 'theory'>('build-along');
+  let newBuildsApplication = $state(false);
   let newSourceBrief = $state('');
   let targetFolder = $state('');
 
@@ -68,7 +71,19 @@
   const DEFAULT_COURSES_FOLDER = '~/Desktop/ECPE/courses';
   const DEFAULT_SINGLES_FOLDER = '~/Desktop/ECPE/singles';
 
-  let canCreate = $derived(!!newSourceBrief.trim() || !!newName.trim());
+  let canCreate = $derived.by(() => {
+    if (!newSourceBrief.trim() && !newName.trim()) return false;
+    if (createMode === 'course' && newBuildsApplication && newSourceBrief.trim() && !newFirstEpisodeCode.trim()) {
+      return false;
+    }
+    return true;
+  });
+
+  let canCreateEpisode = $derived.by(() => {
+    if (!newEpisodeTitle.trim()) return false;
+    if (courseInfo?.course.builds_application && !newEpisodeCode.trim()) return false;
+    return true;
+  });
 
   let breadcrumb = $derived.by(() => {
     const parts: string[] = [];
@@ -323,10 +338,12 @@
         title: newEpisodeTitle.trim(),
         topic: newEpisodeTopic.trim() || undefined,
         sourceBrief: newEpisodeBrief.trim() || undefined,
+        episodeCode: newEpisodeCode.trim() || undefined,
       });
       newEpisodeTitle = '';
       newEpisodeTopic = '';
       newEpisodeBrief = '';
+      newEpisodeCode = '';
       await refreshCourseInfo();
       await openProject(root);
       log(`Created episode: ${root}`);
@@ -343,7 +360,7 @@
     return 'Planned';
   }
 
-  async function importTextFile(target: 'new' | 'project') {
+  async function importTextFile(target: 'new' | 'project' | 'firstEpisodeCode' | 'episodeCode') {
     if (!window.ecpe) return;
     clearError();
     try {
@@ -351,6 +368,10 @@
       if (!file) return;
       if (target === 'new') {
         newSourceBrief = file.content;
+      } else if (target === 'firstEpisodeCode') {
+        newFirstEpisodeCode = file.content;
+      } else if (target === 'episodeCode') {
+        newEpisodeCode = file.content;
       } else {
         sourceBrief = file.content;
       }
@@ -548,6 +569,8 @@
           sourceBrief: newSourceBrief.trim() || undefined,
           description: newDescription.trim() || undefined,
           type: newCourseType,
+          builds_application: newBuildsApplication,
+          episodeCode: newFirstEpisodeCode.trim() || undefined,
         });
         await openCourse(created);
         if (firstEpisodeRoot) await openProject(firstEpisodeRoot);
@@ -828,6 +851,10 @@
               <option value="theory">Theory</option>
             </select>
           </label>
+          <label class="checkbox-row">
+            <input type="checkbox" bind:checked={newBuildsApplication} />
+            Build-app course — each episode needs <code>episode-code.json</code> (repo binding for that video)
+          </label>
         {/if}
 
         <label>
@@ -864,6 +891,35 @@
           ></textarea>
         </div>
 
+        {#if createMode === 'course' && newBuildsApplication && newSourceBrief.trim()}
+          <div class="brief-section">
+            <div class="brief-header">
+              <div>
+                <div class="field-label">
+                  Episode code binding <span class="muted">(required for ep01)</span>
+                </div>
+                <p class="muted">
+                  JSON for this episode only — repo paths, demo, <code>script_sources</code>. Saved as
+                  <code>episode-code.json</code> in the episode folder.
+                </p>
+              </div>
+              <button
+                class="secondary"
+                type="button"
+                onclick={() => importTextFile('firstEpisodeCode')}
+                disabled={busy}
+              >
+                Import JSON…
+              </button>
+            </div>
+            <textarea
+              bind:value={newFirstEpisodeCode}
+              rows="10"
+              placeholder={'{\n  "version": 1,\n  "repo_url": "...",\n  "repo_path": "/path/to/app",\n  "git_checkpoint": "ep01",\n  "script_sources": []\n}'}
+            ></textarea>
+          </div>
+        {/if}
+
         <div class="folder-row">
           <div>
             <div class="field-label">{createMode === 'course' ? 'Courses folder' : 'Singles folder'}</div>
@@ -891,8 +947,18 @@
           <p class="muted">{courseInfo.course.description}</p>
         {/if}
         <p class="muted">
-          Type: {courseInfo.course.type} · {courseInfo.episodes.length} episode(s)
+          Type: {courseInfo.course.type}
+          {#if courseInfo.course.builds_application}
+            · <strong>Build-app</strong> — code binding per episode
+          {/if}
+          · {courseInfo.episodes.length} episode(s)
         </p>
+        {#if courseInfo.course.builds_application}
+          <p class="muted">
+            Each episode needs its own <code>episode-code.json</code> when you create it. Pipeline injects only
+            that episode's binding — not the whole course plan.
+          </p>
+        {/if}
         <div class="actions">
           <button class="secondary" onclick={() => window.ecpe?.openFolder(courseRoot)}>Open course folder</button>
           <button class="secondary" onclick={refreshCourseInfo} disabled={busy}>Refresh</button>
@@ -910,10 +976,13 @@
                 <div class="ep-body">
                   <p class="ep-title">{ep.title}</p>
                   <p class="ep-meta">{ep.folder}</p>
-                  <div class="artifact-dots" title="Script · Plan · Manifest">
+                  <div class="artifact-dots" title="Script · Plan · Manifest · Code">
                     <span class="artifact-dot" class:on={ep.artifactFlags.finalScript}></span>
                     <span class="artifact-dot" class:on={ep.artifactFlags.productionPlan}></span>
                     <span class="artifact-dot" class:on={ep.artifactFlags.editManifest}></span>
+                    {#if courseInfo.course.builds_application}
+                      <span class="artifact-dot code" class:on={ep.hasEpisodeCode} title="episode-code.json"></span>
+                    {/if}
                   </div>
                 </div>
                 <span class="status-pill {ep.status}">{episodeStatusLabel(ep.status)}</span>
@@ -939,8 +1008,26 @@
           Roadmap <span class="muted">(optional)</span>
           <textarea bind:value={newEpisodeBrief} rows="6" placeholder="source-brief.md for this episode"></textarea>
         </label>
+        {#if courseInfo.course.builds_application}
+          <div class="brief-section">
+            <div class="brief-header">
+              <div>
+                <div class="field-label">Episode code binding <span class="muted">(required)</span></div>
+                <p class="muted">Paste JSON for this episode — saved as <code>episode-code.json</code>.</p>
+              </div>
+              <button class="secondary" type="button" onclick={() => importTextFile('episodeCode')} disabled={busy}>
+                Import JSON…
+              </button>
+            </div>
+            <textarea
+              bind:value={newEpisodeCode}
+              rows="10"
+              placeholder={'{\n  "version": 1,\n  "repo_url": "...",\n  "repo_path": "/path/to/app",\n  "git_checkpoint": "ep02",\n  "script_sources": []\n}'}
+            ></textarea>
+          </div>
+        {/if}
         <div class="actions">
-          <button onclick={createEpisode} disabled={!newEpisodeTitle.trim() || busy}>
+          <button onclick={createEpisode} disabled={!canCreateEpisode || busy}>
             {busy ? 'Creating…' : 'Create episode'}
           </button>
         </div>

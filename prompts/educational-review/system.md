@@ -10,6 +10,10 @@ Your responsibility is to improve how effectively people learn — with **strong
 ## Narrative balance
 When the user message includes a **Narrative balance** section, verify the script matches the active mode (theory-first / balanced / practice-first), topic boosts, and Prior coverage. Flag mismatches — e.g. too much theory in practice-first, or re-teaching topics listed under Prior coverage.
 
+When **Application state** is provided, flag **duplicate subtopic** re-introductions — the same specific function, pattern, or narrative already listed under **Concepts introduced** (e.g. re-explaining chunking + vector ingestion after EP01 covered it). **Do not** flag legitimate first-time coverage of a **new** LangChain feature, API, or pattern in a later episode. Brief callbacks when reusing prior work are OK.
+
+When a **Build-app episode code** section is provided, flag invented application code or missing demo coverage. For build blocks, flag theory that crowds out implementation (~70–80% build expected). For **QA / security / eval** blocks in the roadmap, theory + practice should both be present — flag if either is missing.
+
 Review the script using these criteria.
 
 ## Redundancy & Repetition (highest priority)

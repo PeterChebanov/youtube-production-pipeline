@@ -25,7 +25,7 @@ import {
 import { maybeArchiveArtifact } from './archive.js';
 import { openProject, readArtifact, readSourceBrief, writeArtifact } from './project.js';
 import { maybeAutoEpisodeWrap } from './episode-wrap.js';
-import { readCourseContextForEpisode } from './course.js';
+import { readCourseContextForEpisode, assertEpisodeBuildAppGate } from './course.js';
 import { reportProgress } from './progress.js';
 
 const LLM_STAGES = new Set<KnowledgeStageId>(
@@ -111,6 +111,7 @@ async function buildStageContext(
   if (courseCtx.priorCoverage) context.priorCoverage = courseCtx.priorCoverage;
   if (courseCtx.courseName) context.courseName = courseCtx.courseName;
   if (courseCtx.episodeNumber) context.episodeNumber = courseCtx.episodeNumber;
+  if (courseCtx.episodeCodeAppendix) context.episodeCodeAppendix = courseCtx.episodeCodeAppendix;
 
   for (const key of STAGE_INPUTS[stageId]) {
     if (key === 'channel' || key === 'video') continue;
@@ -174,6 +175,7 @@ export async function runStage(
   }
 
   await assertStageInputs(projectPath, stageId);
+  await assertEpisodeBuildAppGate(projectPath);
 
   loadEnv();
   const context = await buildStageContext(projectPath, stageId, options.revisionNotes);

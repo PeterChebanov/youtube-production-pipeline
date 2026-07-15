@@ -3,3 +3,4 @@ slug: my-course
 type: build-along
 description: ""
 episodes_dir: episodes
+builds_application: false

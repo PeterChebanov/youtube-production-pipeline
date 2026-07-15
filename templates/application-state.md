@@ -22,7 +22,11 @@ _(nothing yet)_
 
 ## Not yet built
 
-_(add from master plan)_
+_(backlog — updated automatically after each episode via episode-wrap)_
+
+## Concepts introduced
+
+_(Specific subtopics / APIs / patterns first explained per episode — e.g. "LangChain text splitters + pgvector (EP01)", not just "LangChain". Same tool may recur; do not repeat the **same** subtopic narrative; **do** explain new functions when first used. Updated via episode-wrap.)_
 
 ## Decisions
 

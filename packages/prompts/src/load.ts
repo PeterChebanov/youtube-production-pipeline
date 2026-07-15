@@ -5,6 +5,10 @@ import { fileURLToPath } from 'node:url';
 import Handlebars from 'handlebars';
 import { enrichWordBudgetContext } from './word-budget.js';
 import { buildNarrativeBalanceAppendix } from './narrative-balance.js';
+import {
+  estimateApplicationStateTokens,
+  prepareApplicationStateForPrompt,
+} from './application-state.js';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const GLOBAL_PROMPTS_ROOT = path.join(REPO_ROOT, 'prompts');
@@ -30,6 +34,8 @@ export interface PromptContext {
   revisionNotes?: string;
   /** Production plan JSON for episode-wrap stage */
   productionPlan?: string;
+  /** Build-app: formatted episode code binding from episode-code.json */
+  episodeCodeAppendix?: string;
   /** Course-level assumed prior knowledge from other channel content */
   priorCoverage?: string;
   /** ISO date YYYY-MM-DD — injected automatically in buildPrompts. */
@@ -103,7 +109,16 @@ export async function buildPrompts(
     const header = context.courseName
       ? `Application state (${context.courseName}${context.episodeNumber ? ` · before episode ${context.episodeNumber}` : ''})`
       : 'Application state (course context)';
-    user += `\n\n---\n## ${header}\n\n${context.applicationState.trim()}`;
+    const prepared = prepareApplicationStateForPrompt(context.applicationState, stageId);
+    const injectNote =
+      prepared.meta.compacted && prepared.meta.originalChars > prepared.meta.injectedChars
+        ? `\n\n_Injected snapshot: ~${estimateApplicationStateTokens(prepared.meta.injectedChars)} tokens (full file ~${estimateApplicationStateTokens(prepared.meta.originalChars)} tokens). Concepts + project tree preserved._`
+        : '';
+    user += `\n\n---\n## ${header}\n\nRolling digest from prior episodes. **Dedup rule:** avoid repeating the **same subtopic / function / pattern** already in **Concepts introduced** (e.g. do not re-teach chunking if EP01 covered it). **Reusing a stack is fine** — LangChain and other tools may appear every episode. **Explain anything new** in this episode that is not yet in Concepts introduced. Brief callbacks when reusing prior work are enough.${injectNote}\n\n${prepared.text}`;
+  }
+
+  if (context.episodeCodeAppendix?.trim()) {
+    user += `\n\n---\n${context.episodeCodeAppendix.trim()}`;
   }
 
   const narrativeAppendix = buildNarrativeBalanceAppendix(context.video, context.priorCoverage);

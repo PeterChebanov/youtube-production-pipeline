@@ -8,6 +8,8 @@ export const CourseSchema = z.object({
   type: z.enum(COURSE_TYPES).default('build-along'),
   description: z.string().default(''),
   episodes_dir: z.string().default('episodes'),
+  /** When true: each episode requires episode-code.json; scripts use real repo code only. */
+  builds_application: z.boolean().default(false),
 });
 
 export type Course = z.infer<typeof CourseSchema>;
@@ -38,5 +40,4 @@ export const COURSE_ARTIFACTS = {
   courseState: '.ecpe/course-state.json',
   applicationState: 'application-state.md',
   priorCoverage: 'prior-coverage.md',
-  masterPlan: 'master-plan.md',
 } as const;

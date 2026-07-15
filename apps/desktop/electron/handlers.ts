@@ -149,8 +149,10 @@ export async function createCourseAction(input: {
   parentDir?: string;
   topic?: string;
   sourceBrief?: string;
+  episodeCode?: string;
   description?: string;
   type?: 'build-along' | 'theory';
+  builds_application?: boolean;
 }): Promise<{ courseRoot: string; firstEpisodeRoot?: string }> {
   if (!input.name?.trim() && !input.sourceBrief?.trim()) {
     throw new Error('Provide a course name or a narrative for the first episode.');
@@ -165,9 +167,11 @@ export async function createCourseAction(input: {
     name: courseName,
     description: input.description,
     type: input.type ?? 'build-along',
+    builds_application: input.builds_application ?? false,
     firstEpisodeBrief: input.sourceBrief?.trim(),
     firstEpisodeTitle: input.name?.trim() || courseName,
     firstEpisodeTopic: input.topic?.trim(),
+    firstEpisodeCode: input.episodeCode?.trim(),
   });
 
   await touchRecentCourse(paths.root);
@@ -192,11 +196,13 @@ export async function createEpisodeAction(input: {
   title: string;
   topic?: string;
   sourceBrief?: string;
+  episodeCode?: string;
 }): Promise<{ root: string }> {
   const paths = await createEpisode(input.courseRoot, {
     title: input.title.trim(),
     topic: input.topic?.trim(),
     sourceBrief: input.sourceBrief?.trim(),
+    episodeCode: input.episodeCode?.trim(),
   });
   await touchRecent(paths.root);
   await touchRecentCourse(input.courseRoot);

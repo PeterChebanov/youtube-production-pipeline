@@ -17,6 +17,11 @@ import {
 import { ARTIFACTS } from './artifacts.js';
 import { createProject, openProject, slugify, writeArtifact, type ProjectPaths } from './project.js';
 import { syncVideoYamlFromRoadmap } from './roadmap-meta.js';
+import {
+  assertEpisodeBuildAppReady,
+  resolveBuildAppEpisodeContext,
+  writeEpisodeCodeBinding,
+} from './build-app.js';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
@@ -28,7 +33,6 @@ export interface CoursePaths {
   courseStateFile: string;
   applicationStateFile: string;
   priorCoverageFile: string;
-  masterPlanFile: string;
   episodesDir: string;
   promptsDir: string;
   logsDir: string;
@@ -42,11 +46,11 @@ export interface CourseInfo {
   episodes: CourseEpisodeSummary[];
   hasApplicationState: boolean;
   hasPriorCoverage: boolean;
-  hasMasterPlan: boolean;
 }
 
 export interface CourseEpisodeSummary extends CourseEpisodeEntry {
   root: string;
+  hasEpisodeCode: boolean;
   artifactFlags: {
     finalScript: boolean;
     productionPlan: boolean;
@@ -58,10 +62,13 @@ export interface CreateCourseOptions {
   name: string;
   description?: string;
   type?: Course['type'];
+  builds_application?: boolean;
   /** If set, creates ep01 with this plan as source-brief */
   firstEpisodeBrief?: string;
   firstEpisodeTitle?: string;
   firstEpisodeTopic?: string;
+  /** Required when builds_application and first episode is created */
+  firstEpisodeCode?: string;
 }
 
 export interface CreateEpisodeOptions {
@@ -69,6 +76,8 @@ export interface CreateEpisodeOptions {
   topic?: string;
   sourceBrief?: string;
   episodeNumber?: number;
+  /** JSON for episode-code.json — required in build-app courses */
+  episodeCode?: string;
 }
 
 async function exists(filePath: string): Promise<boolean> {
@@ -102,7 +111,6 @@ export function resolveCoursePaths(parentDir: string, slug: string): CoursePaths
     courseStateFile: path.join(root, COURSE_ARTIFACTS.courseState),
     applicationStateFile: path.join(root, COURSE_ARTIFACTS.applicationState),
     priorCoverageFile: path.join(root, COURSE_ARTIFACTS.priorCoverage),
-    masterPlanFile: path.join(root, COURSE_ARTIFACTS.masterPlan),
     episodesDir: path.join(root, 'episodes'),
     promptsDir: path.join(root, 'prompts'),
     logsDir: path.join(root, 'logs'),
@@ -193,6 +201,7 @@ export async function createCourse(
     slug,
     type: options.type ?? 'build-along',
     description: options.description?.trim() ?? '',
+    builds_application: options.builds_application ?? false,
   });
   await writeFile(paths.courseYaml, stringifyYaml(course), 'utf8');
 
@@ -220,6 +229,7 @@ export async function createCourse(
       title: options.firstEpisodeTitle?.trim() || options.name.trim(),
       topic: options.firstEpisodeTopic?.trim() || 'See source-brief.md',
       sourceBrief: options.firstEpisodeBrief.trim(),
+      episodeCode: options.firstEpisodeCode?.trim(),
       episodeNumber: 1,
     });
     firstEpisodeRoot = ep.root;
@@ -233,6 +243,8 @@ export async function createEpisode(
   options: CreateEpisodeOptions,
 ): Promise<ProjectPaths> {
   const coursePaths = await openCourse(courseRoot);
+  const courseRaw = await readFile(coursePaths.courseYaml, 'utf8');
+  const course = parseYamlFile(courseRaw, CourseSchema);
   const state = await readCourseState(coursePaths);
   const episodeNumber =
     options.episodeNumber ??
@@ -276,6 +288,15 @@ export async function createEpisode(
     await syncVideoYamlFromRoadmap(paths.root, options.sourceBrief.trim());
   }
 
+  if (course.builds_application) {
+    if (!options.episodeCode?.trim()) {
+      throw new Error(
+        `Build-app course: ${ARTIFACTS.episodeCode} is required when creating an episode. Paste the JSON binding for this episode.`,
+      );
+    }
+    await writeEpisodeCodeBinding(paths.root, options.episodeCode.trim());
+  }
+
   const entry: CourseEpisodeEntry = {
     episode: episodeNumber,
     slug: epSlug,
@@ -305,6 +326,7 @@ export async function getCourseInfo(courseRoot: string): Promise<CourseInfo> {
     episodes.push({
       ...entry,
       root,
+      hasEpisodeCode: await exists(path.join(root, ARTIFACTS.episodeCode)),
       artifactFlags: flags,
       status: deriveEpisodeStatus(flags),
     });
@@ -317,7 +339,6 @@ export async function getCourseInfo(courseRoot: string): Promise<CourseInfo> {
     episodes,
     hasApplicationState: await exists(paths.applicationStateFile),
     hasPriorCoverage: await exists(paths.priorCoverageFile),
-    hasMasterPlan: await exists(paths.masterPlanFile),
   };
 }
 
@@ -407,6 +428,10 @@ export async function readCourseContextForEpisode(episodeRoot: string): Promise<
   priorCoverage?: string;
   courseName?: string;
   episodeNumber?: number;
+  buildsApplication?: boolean;
+  episodeCodeAppendix?: string;
+  courseRoot?: string;
+  appRepoPath?: string;
 }> {
   const courseRoot = await resolveCourseRootFromEpisode(episodeRoot);
   if (!courseRoot) return {};
@@ -420,12 +445,33 @@ export async function readCourseContextForEpisode(episodeRoot: string): Promise<
   const videoRaw = await readFile(paths.videoYaml, 'utf8');
   const video = parseYamlFile(videoRaw, VideoSchema);
 
+  const buildCtx = await resolveBuildAppEpisodeContext(
+    episodeRoot,
+    info.course.builds_application,
+    video.episode,
+  );
+
   return {
     applicationState,
     priorCoverage,
     courseName: info.course.name,
     episodeNumber: video.episode,
+    buildsApplication: buildCtx.buildsApplication,
+    episodeCodeAppendix: buildCtx.episodeCodeAppendix,
+    courseRoot,
+    appRepoPath: buildCtx.episodeBinding?.repo_path,
   };
+}
+
+/** Block knowledge / visual-plan when build-app episode has no code binding. */
+export async function assertEpisodeBuildAppGate(episodeProjectPath: string): Promise<void> {
+  const courseRoot = await resolveCourseRootFromEpisode(episodeProjectPath);
+  if (!courseRoot) return;
+  const coursePaths = await openCourse(courseRoot);
+  const courseRaw = await readFile(coursePaths.courseYaml, 'utf8');
+  const course = parseYamlFile(courseRaw, CourseSchema);
+  if (!course.builds_application) return;
+  await assertEpisodeBuildAppReady(episodeProjectPath, true);
 }
 
 export async function createSingleVideo(

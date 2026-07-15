@@ -24,7 +24,7 @@ import {
 } from './artifacts.js';
 import { maybeArchiveArtifact } from './archive.js';
 import { openProject, readArtifact, readSourceBrief, writeArtifact } from './project.js';
-import { readCourseContextForEpisode } from './course.js';
+import { readCourseContextForEpisode, assertEpisodeBuildAppGate } from './course.js';
 import { reportProgress } from './progress.js';
 import {
   formatPlanLimitsTable,
@@ -292,6 +292,7 @@ async function buildVisualPlanContext(
   if (courseCtx.priorCoverage) context.priorCoverage = courseCtx.priorCoverage;
   if (courseCtx.courseName) context.courseName = courseCtx.courseName;
   if (courseCtx.episodeNumber) context.episodeNumber = courseCtx.episodeNumber;
+  if (courseCtx.episodeCodeAppendix) context.episodeCodeAppendix = courseCtx.episodeCodeAppendix;
 
   return context;
 }
@@ -301,6 +302,7 @@ async function runVisualPlanStage(
   options: RunProductionOptions,
 ): Promise<RunProductionResult> {
   await assertProductionInputs(projectPath, 'visual-plan');
+  await assertEpisodeBuildAppGate(projectPath);
 
   loadEnv();
 

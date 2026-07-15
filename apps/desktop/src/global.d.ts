@@ -4,6 +4,7 @@ export interface CourseEpisodeSummary {
   title: string;
   folder: string;
   root: string;
+  hasEpisodeCode: boolean;
   status: 'planned' | 'in_progress' | 'done';
   artifactFlags: {
     finalScript: boolean;
@@ -19,13 +20,14 @@ export interface CourseInfo {
     slug: string;
     type: 'build-along' | 'theory';
     description: string;
+    builds_application?: boolean;
   };
   state: {
     episodes: { episode: number; title: string; folder: string }[];
   };
   episodes: CourseEpisodeSummary[];
   hasApplicationState: boolean;
-  hasMasterPlan: boolean;
+  hasPriorCoverage: boolean;
 }
 
 export interface AppSettings {
@@ -56,8 +58,10 @@ export interface EcpeApi {
     parentDir?: string;
     topic?: string;
     sourceBrief?: string;
+    episodeCode?: string;
     description?: string;
     type?: 'build-along' | 'theory';
+    builds_application?: boolean;
   }) => Promise<{ courseRoot: string; firstEpisodeRoot?: string }>;
   loadCourse: (root: string) => Promise<CourseInfo>;
   getCourseInfo: (root: string) => Promise<CourseInfo>;
@@ -66,6 +70,7 @@ export interface EcpeApi {
     title: string;
     topic?: string;
     sourceBrief?: string;
+    episodeCode?: string;
   }) => Promise<{ root: string }>;
   getApplicationState: (root: string) => Promise<{ content: string }>;
   saveApplicationState: (root: string, content: string) => Promise<{ ok: boolean }>;

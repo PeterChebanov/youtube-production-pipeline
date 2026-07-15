@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   ChannelSchema,
@@ -195,6 +195,19 @@ export async function runEpisodeWrap(options: RunEpisodeWrapOptions): Promise<Ru
 
   const outputFile = COURSE_ARTIFACTS.applicationState;
   await maybeArchiveArtifact(courseRoot, outputFile, 'episode-wrap');
+
+  if (currentState?.trim()) {
+    const historyDir = path.join(courseRoot, 'logs', 'application-state-history');
+    await mkdir(historyDir, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const epLabel = video.episode != null ? `ep${String(video.episode).padStart(2, '0')}` : 'ep';
+    await writeFile(
+      path.join(historyDir, `before-${epLabel}-${stamp}.md`),
+      currentState.trimEnd() + '\n',
+      'utf8',
+    );
+  }
+
   await writeArtifact(courseRoot, outputFile, content);
 
   const scriptHash = hashFinalScript(finalScript);

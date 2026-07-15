@@ -28,3 +28,13 @@ export {
   parseSectionWordBudgets,
   type SectionWordBudget,
 } from './word-budget.js';
+export {
+  APPLICATION_STATE_MAX_IMPLEMENTED_BULLETS,
+  APPLICATION_STATE_MAX_INJECT_CHARS,
+  estimateApplicationStateTokens,
+  isProtectedApplicationStateSection,
+  parseApplicationStateSections,
+  prepareApplicationStateForPrompt,
+  type ApplicationStateInjectMeta,
+  type ApplicationStateInjectResult,
+} from './application-state.js';

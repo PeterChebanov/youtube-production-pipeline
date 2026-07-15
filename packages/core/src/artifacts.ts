@@ -11,6 +11,8 @@ export const ARTIFACTS = {
   narrationSegments: 'narration-segments.json',
   productionPlan: 'production-plan.json',
   editManifest: 'edit-manifest.json',
+  /** Build-app: per-episode repository code binding (one episode only). */
+  episodeCode: 'episode-code.json',
 } as const;
 
 export type ArtifactKey = keyof typeof ARTIFACTS;

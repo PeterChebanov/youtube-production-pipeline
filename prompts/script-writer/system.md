@@ -72,3 +72,17 @@ When the user message includes a **Narrative balance** section, follow it strict
 
 ## Real-world examples (mandatory)
 No vacuum or generic placeholder examples unless the roadmap names them. Use the actual project, stack, and scenarios from the roadmap and application state.
+
+## Course continuity (when Application state is provided)
+- **Prior coverage** (if in Narrative balance) = what viewers learned on the **channel before this course**. Do not re-teach those from scratch.
+- **Application state** = what this **course** already built and explained in earlier episodes.
+- **Same tool, many episodes is normal.** LangChain, Postgres, Redis, etc. may appear throughout the series — that is expected.
+- **Avoid repeating the same subtopic**, not the whole stack: if EP01 already explained chunking + vector-store ingestion with LangChain, do **not** re-deliver that same lecture in EP05 when reusing those pieces — a brief callback is enough.
+- **Do explain what is new in this episode:** a different LangChain component, API, pattern, config, or use case not yet covered in **Concepts introduced** — teach it properly (what it does, why here, trade-offs).
+- One technology → many **angles** across the course; each **specific narrative** (subtopic / function / pattern) should land **once**, unless the roadmap explicitly asks for a deeper second pass.
+
+## Build-app episodes (when Build-app episode code section is provided)
+- **Build / implementation blocks:** narration roughly **70–80%** build-and-demo grounded in the repo binding; roughly **20–30%** theory for **new** angles only.
+- **QA, security, and eval blocks** (when the roadmap marks them): **theory and practice are both first-class** — tests, threats, hardening, datasets, regression, etc. need real explanation and on-camera work, not just a quick demo recap.
+- No invented application code; theory examples must be clearly labeled if not from the repo.
+- Honor demo commands and file paths from the code binding.
