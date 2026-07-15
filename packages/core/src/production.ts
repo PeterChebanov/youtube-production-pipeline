@@ -31,6 +31,11 @@ import {
   formatValidationFixPrompt,
   validateProductionPlan,
 } from './plan-validate.js';
+import {
+  fixUnescapedQuotesInPlanJson,
+  normalizeProductionPlan,
+  planLooksTruncated,
+} from './plan-normalize.js';
 import { updateProjectState } from './stage.js';
 
 const PRODUCTION_LLM_STAGES = new Set<ProductionStageId>(['visual-plan']);
@@ -97,16 +102,23 @@ async function assertProductionInputs(
 }
 
 function extractJsonText(raw: string): string {
-  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenced?.[1]) return fenced[1].trim();
-  const start = raw.indexOf('{');
-  const end = raw.lastIndexOf('}');
-  if (start >= 0 && end > start) return raw.slice(start, end + 1);
-  return raw.trim();
+  const trimmed = raw.trim();
+  const fenceOpen = trimmed.match(/^```(?:json)?\s*\n/i);
+  if (fenceOpen) {
+    const bodyStart = fenceOpen[0].length;
+    const fenceClose = trimmed.lastIndexOf('\n```');
+    if (fenceClose > bodyStart) {
+      return trimmed.slice(bodyStart, fenceClose).trim();
+    }
+  }
+  const start = trimmed.indexOf('{');
+  const end = trimmed.lastIndexOf('}');
+  if (start >= 0 && end > start) return trimmed.slice(start, end + 1);
+  return trimmed;
 }
 
 function extractJsonFromLlm(text: string): unknown {
-  const jsonText = extractJsonText(text);
+  const jsonText = fixUnescapedQuotesInPlanJson(extractJsonText(text));
   try {
     return JSON.parse(jsonText);
   } catch {
@@ -116,7 +128,8 @@ function extractJsonFromLlm(text: string): unknown {
 
 function parseProductionPlanFromLlm(raw: string): ProductionPlan {
   const data = extractJsonFromLlm(raw);
-  return ProductionPlanSchema.parse(data);
+  const plan = ProductionPlanSchema.parse(data);
+  return normalizeProductionPlan(plan);
 }
 
 async function saveVisualPlanRaw(projectPath: string, raw: string, label: string): Promise<string> {
@@ -198,6 +211,31 @@ No markdown fences, no commentary. Fix trailing commas, unclosed strings, and sc
         message: `Plan OK — ${plan.scenes.length} scenes across ${new Set(plan.scenes.map((s) => s.block_id)).size} blocks`,
       });
       return plan;
+    }
+
+    if (planLooksTruncated(plan, segments.blocks.length)) {
+      lastValidationErrors = validation.errors;
+      const rawPath = await saveVisualPlanRaw(projectPath, raw, `truncated-${attempt}`);
+      reportProgress({
+        stage: 'visual-plan',
+        message: `Plan JSON looks truncated (${plan.scenes.length} scenes, expected all ${segments.blocks.length} blocks). Raw: ${rawPath}`,
+      });
+
+      if (attempt >= VISUAL_PLAN_MAX_ATTEMPTS - 1) {
+        throw new Error(
+          `Production plan JSON was truncated after ${VISUAL_PLAN_MAX_ATTEMPTS} attempts. Escape embedded quotes in narration_span as \\" and return the full plan.`,
+        );
+      }
+
+      user = `${baseUser}
+
+---
+The previous JSON was truncated or invalid (only ${plan.scenes.length} scenes parsed; episode has ${segments.blocks.length} narration blocks).
+Return ONLY the complete production-plan.json (version 2) covering every block and every sentence.
+Escape embedded double quotes inside strings as \\" (e.g. narration_span).
+Use excalidraw data.elements (type "box"), not data.boxes.
+No markdown fences.`;
+      continue;
     }
 
     lastValidationErrors = validation.errors;

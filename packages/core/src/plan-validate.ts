@@ -19,7 +19,11 @@ function ceilDiv(a: number, b: number): number {
 
 export function minScenesForBlock(blockDurationSec: number): number {
   if (blockDurationSec <= MAX_HOLD_SEC) return 1;
-  return ceilDiv(blockDurationSec, MAX_HOLD_SEC);
+  const ratio = blockDurationSec / MAX_HOLD_SEC;
+  const floor = Math.floor(ratio);
+  // 252s / 42s ≈ 6.005 — do not force a 7th scene for sub-2% overrun (LLM retry churn).
+  if (floor >= 1 && ratio - floor < 0.02) return floor;
+  return Math.ceil(ratio);
 }
 
 export function minStepsForHold(holdSec: number): number {
@@ -120,7 +124,21 @@ function validateSceneDensity(scene: ProductionScene, errors: string[]): void {
 
 function parseExcalidrawElements(data: Record<string, unknown>): Record<string, unknown>[] {
   const raw = data.elements;
-  return Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [];
+  if (Array.isArray(raw) && raw.length > 0) return raw as Record<string, unknown>[];
+
+  const boxes = data.boxes;
+  if (!Array.isArray(boxes)) return [];
+
+  return boxes.map((item) => {
+    const box = item as Record<string, unknown>;
+    return {
+      type: 'box',
+      label: box.label,
+      annotation: box.annotation,
+      icon: box.icon,
+      text: box.text,
+    };
+  });
 }
 
 function excalidrawWordCount(elements: Record<string, unknown>[]): number {

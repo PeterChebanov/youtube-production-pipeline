@@ -33,12 +33,15 @@ function splitSentences(narration: string): string[] {
   return sentences.length > 0 ? sentences : [normalized];
 }
 
+/** Next `**Label**` or `**Label:**` header after the current section. */
+const NEXT_SECTION_MARKER = /\n\*\*[^*\n]+:?\*\*/;
+
 function extractSection(body: string, label: RegExp): string {
   const match = body.match(label);
   if (!match || match.index === undefined) return '';
   const start = match.index + match[0].length;
   const rest = body.slice(start);
-  const nextMarker = rest.search(/\n\*\*[^*\n]+:\*\*/);
+  const nextMarker = rest.search(NEXT_SECTION_MARKER);
   const section = nextMarker >= 0 ? rest.slice(0, nextMarker) : rest;
   return normalizeWhitespace(section.replace(/^---\s*$/gm, '').trim());
 }
@@ -46,11 +49,11 @@ function extractSection(body: string, label: RegExp): string {
 function parseBlockBody(body: string): { onScreenAction: string; narration: string } {
   const onScreenAction = extractSection(
     body,
-    /\*\*On-screen Action\*\*\s*\n/i,
+    /\*\*On[- ]screen Action:?\*\*\s*\n/i,
   );
   const narration = extractSection(
     body,
-    /\*\*(?:Narration|What I Should Say):\*\*\s*\n/i,
+    /\*\*(?:Narration|What I Should Say):?\*\*\s*\n/i,
   );
   return { onScreenAction, narration };
 }
@@ -123,7 +126,9 @@ export function segmentScript(
   }
 
   if (blocks.length === 0) {
-    throw new Error('No narration blocks found in script (expected ## headings with **Narration:** sections).');
+    throw new Error(
+      'No narration blocks found in script (expected ## headings with **Narration:** or **What I Should Say:** sections).',
+    );
   }
 
   return NarrationSegmentsSchema.parse({

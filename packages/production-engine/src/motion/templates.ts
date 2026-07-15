@@ -114,6 +114,22 @@ export interface PipelineMetrics {
   rows: number;
 }
 
+function computeVerticalStackMetrics(stepCount: number): PipelineMetrics {
+  const dense = stepCount >= 4;
+  const cardWidth = dense ? 1400 : 1120;
+  const gap = dense ? 4 : 14;
+  return {
+    nodeW: cardWidth,
+    nodeH: dense ? 96 : 132,
+    labelSize: dense ? 32 : 38,
+    visualSize: dense ? 26 : 30,
+    noteSize: dense ? 24 : 28,
+    arrowSize: dense ? 26 : 36,
+    gap,
+    rows: stepCount,
+  };
+}
+
 export function computePipelineMetrics(stepCount: number, layout: 'horizontal' | 'vertical'): PipelineMetrics {
   const canvasW = 1760;
   const canvasH = layout === 'horizontal' ? 760 : 820;
@@ -122,10 +138,10 @@ export function computePipelineMetrics(stepCount: number, layout: 'horizontal' |
 
   if (layout === 'vertical') {
     const canvasH = stepCount >= 5 ? 700 : 820;
-    const nodeH = Math.min(stepCount >= 5 ? 108 : 140, Math.floor((canvasH - (stepCount - 1) * (arrowSize + gap)) / stepCount));
+    const nodeH = Math.min(stepCount >= 5 ? 108 : 96, Math.floor((canvasH - (stepCount - 1) * (arrowSize + gap)) / stepCount));
     const nodeW = Math.min(canvasW, stepCount >= 5 ? 920 : canvasW);
-    const labelSize = nodeH > 110 ? 26 : nodeH > 90 ? 22 : 20;
-    return { nodeW, nodeH: Math.max(72, nodeH), labelSize, visualSize: labelSize - 2, noteSize: labelSize - 4, arrowSize, gap, rows: stepCount };
+    const labelSize = nodeH > 90 ? 26 : 22;
+    return { nodeW, nodeH: Math.max(64, nodeH), labelSize, visualSize: labelSize - 2, noteSize: labelSize - 4, arrowSize, gap, rows: stepCount };
   }
 
   const rows = stepCount <= 4 ? 1 : 2;
@@ -208,6 +224,41 @@ function zigzagNodeHtml(step: MotionStep, m: ZigzagMetrics, sceneId: string, ind
   </div>`;
 }
 
+function pipelineVerticalNodeHtml(
+  step: MotionStep,
+  m: PipelineMetrics,
+  delay: number,
+  sceneId: string,
+  index: number,
+  totalSteps: number,
+): string {
+  const badgeSize = Math.round(48 * MOTION_ICON_BADGE_SCALE);
+  const anim = `animation:fadeUp 0.55s ease ${delay}s forwards;opacity:0;transform:translateY(18px);`;
+  const bodyParts: string[] = [];
+  if (step.visual) {
+    bodyParts.push(
+      `<div class="pipe-visual pipe-v-visual" style="font-size:${m.visualSize}px">${escapeHtml(step.visual)}</div>`,
+    );
+  }
+  if (step.annotation) {
+    bodyParts.push(
+      `<div class="pipe-note pipe-v-note" style="font-size:${m.noteSize}px">${escapeHtml(step.annotation)}</div>`,
+    );
+  }
+  const bodyHtml = bodyParts.length
+    ? `<div class="pipe-body">${bodyParts.join('')}</div>`
+    : '';
+
+  return `<div class="pipe-node pipe-node-v" style="${anim}">
+    <div class="pipe-icon">${stepIconHtml(step, sceneId, index, badgeSize)}</div>
+    <div class="pipe-content">
+      <div class="pipe-label pipe-v-label" style="font-size:${m.labelSize}px">${escapeHtml(step.label)}</div>
+      ${bodyHtml}
+    </div>
+    <div class="pipe-step-tag" aria-hidden="true">${index + 1}/${totalSteps}</div>
+  </div>`;
+}
+
 function pipelineNodeHtml(
   step: MotionStep,
   m: PipelineMetrics,
@@ -283,16 +334,16 @@ export function buildPipelineVerticalHtml(
   stepDelaySec: number,
   sceneId: string,
 ): string {
-  const m = computePipelineMetrics(steps.length, 'vertical');
+  const m = computeVerticalStackMetrics(steps.length);
   const parts: string[] = [];
   steps.forEach((step, i) => {
     const delay = 0.7 + i * stepDelaySec;
-    parts.push(pipelineNodeHtml(step, m, delay, sceneId, i, 'pipe-node-v'));
+    parts.push(pipelineVerticalNodeHtml(step, m, delay, sceneId, i, steps.length));
     if (i < steps.length - 1) parts.push(arrowHtml(delay + 0.55, 'down'));
   });
-  return `<div class="stage pipeline-stage${steps.length >= 5 ? ' pipeline-many' : ''}">
+  return `<div class="stage pipeline-stage pipeline-vertical-stage${steps.length >= 5 ? ' pipeline-many' : ''}">
     <div class="title">${escapeHtml(title)}</div>
-    <div class="pipe-canvas pipe-canvas-v" style="gap:${m.gap}px;width:${m.nodeW}px">${parts.join('')}</div>
+    <div class="pipe-canvas pipe-canvas-v" style="gap:${m.gap}px;max-width:${m.nodeW}px">${parts.join('')}</div>
   </div>`;
 }
 
@@ -380,7 +431,92 @@ export function pipelineLayoutCss(theme: { cardBg: string; cardBorder: string; t
   .pipe-canvas { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; min-height: 0; }
   .pipe-canvas-h { gap: 20px; }
   .pipe-row { display: flex; align-items: center; justify-content: center; width: 100%; flex-wrap: nowrap; }
-  .pipe-canvas-v { display: flex; flex-direction: column; align-items: stretch; align-self: center; margin: 0 auto; }
+  .pipeline-vertical-stage.stage { padding: 28px 56px 32px !important; }
+  .pipeline-vertical-stage .title { margin-bottom: 14px !important; }
+  .pipe-canvas-v {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    align-self: center;
+    margin: 0 auto;
+    width: 100%;
+  }
+  .pipeline-vertical-stage .pipe-canvas {
+    justify-content: center;
+    align-items: center;
+  }
+  .pipe-canvas-v .pipe-node-v {
+    display: grid !important;
+    grid-template-columns: auto 1fr auto;
+    column-gap: 40px;
+    align-items: center;
+    width: 100% !important;
+    max-width: 1400px;
+    min-height: 96px;
+    padding: 18px 36px;
+    justify-content: unset;
+    flex-direction: unset;
+    gap: 0;
+    box-sizing: border-box;
+  }
+  .pipe-canvas-v .pipe-node-v .pipe-icon { grid-column: 1; margin-bottom: 0; margin-right: 4px; }
+  .pipe-canvas-v .pipe-node-v .pipe-content {
+    grid-column: 2;
+    text-align: left;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-left: 4px;
+  }
+  .pipe-canvas-v .pipe-node-v .pipe-v-label {
+    text-align: left;
+    flex: unset;
+    font-weight: 700;
+    line-height: 1.15;
+    margin-bottom: 0;
+    color: ${theme.textPrimary};
+  }
+  .pipe-canvas-v .pipe-node-v .pipe-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    text-align: left;
+    align-items: flex-start;
+    justify-content: flex-start;
+    flex: 0;
+    width: 100%;
+    margin-top: 0;
+  }
+  .pipe-canvas-v .pipe-node-v .pipe-v-visual {
+    color: ${theme.textSecondary};
+    max-width: none;
+    text-align: left;
+    line-height: 1.4;
+  }
+  .pipe-canvas-v .pipe-node-v .pipe-v-note {
+    color: ${theme.textSecondary};
+    max-width: none;
+    text-align: left;
+    line-height: 1.45;
+  }
+  .pipe-canvas-v .pipe-node-v .pipe-step-tag {
+    grid-column: 3;
+    font-size: 20px !important;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: rgba(248, 250, 252, 0.32);
+    padding: 10px 0 10px 24px;
+    border-left: 1px solid rgba(248, 250, 252, 0.14);
+    white-space: nowrap;
+    align-self: center;
+  }
+  .pipe-canvas-v .pipe-arrow-down {
+    align-self: center;
+    margin: 0;
+    line-height: 1;
+    font-size: 26px !important;
+  }
   .pipe-node {
     background: ${theme.cardBg}; border: 2px solid ${theme.cardBorder};
     border-left: 5px solid ${BRAND_ORANGE}; border-radius: 16px;
@@ -432,16 +568,21 @@ export function pipelineLayoutCss(theme: { cardBg: string; cardBorder: string; t
   .split-bridge { font-size: 40px; color: ${BRAND_ORANGE}; text-align: center; opacity: 0; font-weight: 700; }
   body.zig-body .stage { padding: 36px 0 32px !important; }
   body.layout-compact .pipeline-stage .title { margin-bottom: 16px; font-size: ${Math.round(SLIDE_TITLE_FONT_PX * 0.82)}px; }
-  body.layout-compact .pipe-node { padding: 12px 16px; }
-  body.layout-compact .pipe-label { font-size: 18px !important; }
-  body.layout-compact .pipe-visual, body.layout-compact .pipe-note { font-size: 14px !important; }
+  body.layout-compact .pipe-node:not(.pipe-node-v) { padding: 12px 16px; }
+  body.layout-compact .pipe-node:not(.pipe-node-v) .pipe-label { font-size: 18px !important; }
+  body.layout-compact .pipe-node:not(.pipe-node-v) .pipe-visual,
+  body.layout-compact .pipe-node:not(.pipe-node-v) .pipe-note { font-size: 14px !important; }
   body.layout-compact .pipe-canvas-h .pipe-row { gap: 10px !important; }
-  body.layout-compact .pipe-node { min-height: 72px !important; }
+  body.layout-compact .pipe-node:not(.pipe-node-v) { min-height: 72px !important; }
+  body.layout-compact .pipe-canvas-v .pipe-node-v {
+    min-height: 120px !important;
+    padding: 24px 36px !important;
+  }
   body.layout-tight .stage { padding: 28px 48px 36px !important; }
   body.layout-tight .title { margin-bottom: 12px !important; font-size: ${Math.round(SLIDE_TITLE_FONT_PX * 0.72)}px !important; }
   body.layout-tight .steps, body.layout-tight .steps-columns { gap: 8px !important; max-height: 820px !important; }
   body.layout-tight .step { padding: 10px 12px !important; }
-  body.layout-tight .pipe-node { padding: 10px 14px !important; min-height: 64px !important; }
+  body.layout-tight .pipe-node:not(.pipe-node-v) { padding: 10px 14px !important; min-height: 64px !important; }
   body.layout-tight .pipe-canvas-h .pipe-row { gap: 8px !important; }
   `;
 }

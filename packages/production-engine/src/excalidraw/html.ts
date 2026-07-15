@@ -55,7 +55,22 @@ interface SpecElement extends SketchElement {
 }
 
 function parseElements(data: Record<string, unknown>): SpecElement[] {
-  const raw = data.elements;
+  let raw = data.elements;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    const boxes = data.boxes;
+    if (Array.isArray(boxes)) {
+      raw = boxes.map((item) => {
+        const box = item as Record<string, unknown>;
+        return {
+          type: 'box',
+          label: box.label,
+          annotation: box.annotation,
+          icon: box.icon,
+          text: box.text,
+        };
+      });
+    }
+  }
   if (!Array.isArray(raw)) return [];
   return raw.map((item) => {
     const el = item as Record<string, unknown>;

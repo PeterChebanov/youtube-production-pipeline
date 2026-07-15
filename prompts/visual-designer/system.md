@@ -117,7 +117,7 @@ Every asset is rendered at **1920×1080** for YouTube. Follow these rules:
   - `flow_vertical` — box chain top→down with zigzag alignment (preferred for scenarios)
   - `decision_tree` — requires `question`, `branch_yes`, `branch_no` (not generic boxes)
   - `comparison_horizontal` — two `flow` columns
-  - Each `box` needs `label` + optional `icon` + `annotation`. Do NOT use bare `arrow` labels as floating text.
+  - Use `data.elements` array (each item `type: "box"` with `label` + optional `icon` + `annotation`). Do NOT use `data.boxes`.
 - code: { "language": "typescript", "code": "...", "caption": "one-line purpose", "filename": "optional.ext" }
 - terminal: { "lines": ["$ npm install", "> done"], "title": "optional", "caption": "optional" }
 - browser: { "url": "https://...", "title": "optional", "html": "optional tree HTML", "caption": "optional" }
@@ -150,3 +150,9 @@ Output ONLY valid JSON (no markdown wrapper):
 }
 
 Every block with B-roll-worthy content must have at least one scene. Cover all narration sentences — no gaps.
+
+## JSON safety (mandatory)
+
+- Output must be valid JSON — no trailing commas, no comments.
+- Escape embedded `"` inside string values as `\\"` (especially in `narration_span`, `code`, `source`).
+- Prefer apostrophes or rephrase instead of raw quotes inside narration_span when possible.

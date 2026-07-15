@@ -26,6 +26,11 @@ async function layoutZigzagConnectors(page: import('playwright').Page): Promise<
 }
 
 async function applyMotionLayoutFixes(page: import('playwright').Page): Promise<void> {
+  const isVerticalPipeline = (await page.locator('.pipeline-vertical-stage').count()) > 0;
+  if (isVerticalPipeline) {
+    await layoutZigzagConnectors(page);
+    return;
+  }
   if (await motionContentOverflows(page)) {
     await page.locator('body').evaluate((el) => el.classList.add('layout-compact'));
     await page.waitForTimeout(200);
@@ -48,17 +53,18 @@ export async function renderMotionMp4(
       outputPath,
       waitMs,
       beforeWait: async (page) => {
+        const isVerticalPipeline = (await page.locator('.pipeline-vertical-stage').count()) > 0;
         await applyMotionLayoutFixes(page);
         let qa = await runMotionQA(page);
 
-        if (hasHardFailures(qa)) {
+        if (!isVerticalPipeline && hasHardFailures(qa)) {
           await page.locator('body').evaluate((el) => el.classList.add('layout-compact'));
           await page.waitForTimeout(200);
           await applyMotionLayoutFixes(page);
           qa = await runMotionQA(page);
         }
 
-        if (hasHardFailures(qa)) {
+        if (!isVerticalPipeline && hasHardFailures(qa)) {
           await page.locator('body').evaluate((el) => {
             el.classList.add('layout-compact');
             el.classList.add('layout-tight');
