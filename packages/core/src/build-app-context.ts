@@ -7,6 +7,14 @@ import {
 } from './episode-authoring.js';
 import { readCourseContextForEpisode } from './course.js';
 
+/** Stages that do not need repo code dumps (length/polish only). */
+const SKIP_CODE_APPENDIX = new Set([
+  'educational-review',
+  'youtube-editor',
+  'segment',
+  'episode-wrap',
+]);
+
 /**
  * Enrich prompt context for course episodes.
  * Application state / prior coverage apply to all courses.
@@ -28,7 +36,10 @@ export async function enrichBuildAppPromptContext(
   if (!courseCtx.buildsApplication) return;
 
   context.buildsApplication = true;
-  if (courseCtx.episodeCodeAppendix) context.episodeCodeAppendix = courseCtx.episodeCodeAppendix;
+
+  if (!SKIP_CODE_APPENDIX.has(stageId) && courseCtx.episodeCodeAppendix) {
+    context.episodeCodeAppendix = courseCtx.episodeCodeAppendix;
+  }
 
   const authoring = await readEpisodeAuthoring(projectPath);
   if (authoring) {

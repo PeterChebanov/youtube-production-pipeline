@@ -75,5 +75,7 @@ export function outputExtension(renderer: RendererId, animated: boolean): string
 }
 
 export function wantsStaticSnapshot(renderer: RendererId, animated: boolean): boolean {
+  // code/terminal stay HTML for preview, but always emit DaVinci-ready PNG under static/
+  if (renderer === 'code' || renderer === 'terminal') return true;
   return animated && (renderer === 'motion' || ANIMATABLE_RENDERERS.includes(renderer));
 }

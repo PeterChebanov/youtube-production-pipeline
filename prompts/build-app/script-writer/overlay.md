@@ -10,39 +10,57 @@ Write a **YouTube narration** — a human guide through the application, not a t
 | balanced | ~50% | ~50% |
 | theory-first | ~35% | ~65% (still show real code + result) |
 
-Label timed blocks clearly (`Theory`, `Build`, `Demo`, `Hook`) so balance is auditable.
+Use topic headers with kind labels (`Hook`, `Build`, `Demo`, `Recap`) — **no clock timecodes**.
+
+**Canon spine for this episode:**
+1. Hook — what we build + what success looks like on camera
+2. Short topic recap only (budget = theory %)
+3. File walkthrough in Demo walkthrough **skeleton** order
+4. Hero demo that **shows how the result looks** (not only that a command exited 0)
+5. Thin close (optional `## Recap`) — not a second lecture
 
 **Practice content:**
-- What we implement this episode and why it matters in the app architecture
-- Walk through files **in Demo walkthrough order** — one file, then the next
-- Ops/infra only as needed to run the demo (ports, compose, sample data)
-- End build with **hero demo** — the proof declared in the hook
+- What we implement and why it matters in the app architecture
+- Per important file: role → outcome → key imports/types/methods
+- Ops/infra only as needed to run the demo
 - Code as **on-screen snippets** (B-roll) — do not instruct live-typing
 
-**Theory content:**
-- Brief refresh only (especially practice-first: 2–4 sentences per concept)
-- Explain technologies/imports when they appear in *our* files — what they do here
-- Architecture + best practices tied to this episode's slice
+**Theory / Recap content (thin):**
+- practice-first: **2–3 sentences per concept** — name it, why it matters here, move on
+- **No formulas, rank arithmetic, or full algorithm walkthroughs** in Theory/Recap (e.g. no "1/(k+60)" derivations)
+- Put mechanics (RRF math, model internals, SQL operators) **only in Build**, when the code is on screen
 - Do not re-teach Prior coverage / Concepts introduced from scratch
+- No multi-minute standalone Theory lecture block
 
-### Walkthrough structure per file
+### Explain once (mandatory)
 
-1. Why this file exists in the architecture (short)
-2. What it accomplishes in *this* app after this episode
-3. Key imports / tools — only non-stdlib, in *our* context
-4. Main types/classes and methods — what they do, not line-by-line boilerplate
-5. Smooth transition to the next file
+Each mechanism (BM25, RRF, cross-encoder, schema field, …) gets **one** real explanation — at the highest-value place (usually the file that implements it).
+- Theory/Recap may **name** it in one line; Build teaches it; Demo shows the result
+- Forbidden: explain RRF (or any algorithm) in Theory, then explain it again in Build
 
-Skip or shorten utility/wiring files; expand functional pipeline files.
+### Closing Recap (mandatory if present)
 
-### Demo and verification
+`## Recap` / closing block = **3–5 sentences only**:
+1. What we built (modules/endpoint)
+2. What we showed on camera (the visible result)
+3. One abstract bridge to later work (no "next video/episode")
 
-- **On camera:** hero results only (the "money shot" from Demo walkthrough)
-- **End of video (optional):** numbered checklist — git tag, commands, what each step verifies
-- Honor **demo.commands** from episode code binding
+Do **not** re-list BM25 → vector → RRF → rerank as a second lecture.
+
+### Demo quality (mandatory)
+
+Hero demo must make the implementation visible:
+- If you stored chunks — show **chunk text / overlap / metadata**, not only `count(*)`
+- If you return JSON — show the meaningful fields / rank changes
+- Follow ★ money-shot items from the walkthrough skeleton
+
+### Series language
+
+Only abstract: "as the series continues", "when we add generation…".  
+Never: "in the next video", "in the next episode", "video N", "episode N".
 
 ### Dedup
 
-Follow application state **Concepts introduced** — callback when reusing prior subtopics; teach new symbols/APIs properly.
+Follow **Concepts introduced** — callback when reusing prior subtopics; teach new symbols/APIs properly.
 
-No invented application code. Honor Creator roadmap timecodes when present, but Demo walkthrough order wins for file sequence.
+No invented application code. Demo walkthrough skeleton order wins for file sequence. Stay inside the episode length band.

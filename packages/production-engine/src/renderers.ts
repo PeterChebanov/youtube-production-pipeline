@@ -14,6 +14,12 @@ import { renderExcalidrawPng, renderExcalidrawMp4 } from './excalidraw/render.js
 import { renderMotionMp4 } from './motion/render.js';
 import { renderMermaidPng, renderMermaidMp4 } from './mermaid/render.js';
 import { renderUiCardsHtml, renderUiCardsMp4 } from './ui-cards/render.js';
+import {
+  assertPageLooksLikeBroll,
+  captureHtmlFileToPng,
+  FRAME_HEIGHT,
+  FRAME_WIDTH,
+} from './shared/html-png.js';
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -23,10 +29,12 @@ function themeOrDefault(context?: RenderContext): VisualTheme {
   return context?.theme ?? resolveTheme();
 }
 
-function preferHtmlContent(url: string, html: string): boolean {
-  if (!html.trim()) return false;
-  if (!url.trim()) return true;
-  return /\/username\/|example\.com|placeholder|your-org|your-repo|fake-|not-a-real/i.test(url);
+function preferHtmlMock(html: string): boolean {
+  return Boolean(html.trim());
+}
+
+function isLiveHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url.trim());
 }
 
 function colorizeTerminalLine(line: string): string {
@@ -88,7 +96,7 @@ export const codeRenderer: Renderer = {
       const plan = planCodeLayout(code);
       const codeParts: CodePart[] = [];
       for (let i = 0; i < plan.parts.length; i++) {
-        const highlighted = highlighter.codeToHtml(plan.parts[i], {
+        const highlighted = highlighter.codeToHtml(plan.parts[i]!, {
           lang: language,
           theme: shikiTheme,
         });
@@ -101,7 +109,17 @@ export const codeRenderer: Renderer = {
       const html = buildCodePanelHtml(scene, codeParts, plan.fontSize, language, theme);
       await mkdir(path.dirname(outputPath), { recursive: true });
       await writeFile(outputPath, html, 'utf8');
-      return { ok: true, paths: [outputPath] };
+
+      const staticPath = context?.staticOutputPath;
+      if (staticPath) {
+        await captureHtmlFileToPng(outputPath, staticPath);
+      }
+
+      return {
+        ok: true,
+        paths: [outputPath],
+        staticPath,
+      };
     } catch (err) {
       return { ok: false, paths: [], error: err instanceof Error ? err.message : String(err) };
     }
@@ -172,7 +190,16 @@ export const terminalRenderer: Renderer = {
     const html = buildBrandDocument(title, css, body);
     await mkdir(path.dirname(outputPath), { recursive: true });
     await writeFile(outputPath, html, 'utf8');
-    return { ok: true, paths: [outputPath] };
+
+    try {
+      const staticPath = context?.staticOutputPath;
+      if (staticPath) {
+        await captureHtmlFileToPng(outputPath, staticPath);
+      }
+      return { ok: true, paths: [outputPath], staticPath };
+    } catch (err) {
+      return { ok: false, paths: [], error: err instanceof Error ? err.message : String(err) };
+    }
   },
 };
 
@@ -187,32 +214,48 @@ export const browserRenderer: Renderer = {
     const title = typeof scene.data.title === 'string' ? scene.data.title : scene.scene_id;
     const caption = typeof scene.data.caption === 'string' ? scene.data.caption : scene.purpose;
     const theme = themeOrDefault(context);
-    const useHtml = preferHtmlContent(url, html);
+
+    if (!preferHtmlMock(html) && !isLiveHttpUrl(url)) {
+      return {
+        ok: false,
+        paths: [],
+        error:
+          'browser scene requires data.html (preferred mock) or an http(s) data.url — ' +
+          'do not use file:// or bare repo paths',
+      };
+    }
 
     try {
       const { chromium } = await import('playwright');
       const browser = await chromium.launch({ headless: true });
-      const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+      const page = await browser.newPage({
+        viewport: { width: FRAME_WIDTH, height: FRAME_HEIGHT },
+      });
 
-      if (useHtml) {
-        const treeDoc = html.trim() ? detectAndBuildBrowserHtml(html, title, theme, caption) : null;
-        const doc =
-          treeDoc ??
-          buildBrandDocument(
-            title,
-            panelCardCss(theme),
-            `<div class="panel" style="padding:40px;font-size:32px;">${html || `<h1>${escapeHtml(title)}</h1>`}</div>`,
-          );
-        await page.setContent(doc, { waitUntil: 'load' });
-      } else {
-        await page.goto(url, { waitUntil: 'networkidle', timeout: 30_000 });
+      try {
+        // Always prefer HTML mock when present — live GET to POST APIs yields 405.
+        if (preferHtmlMock(html)) {
+          const treeDoc = detectAndBuildBrowserHtml(html, title, theme, caption);
+          const doc =
+            treeDoc ??
+            buildBrandDocument(
+              title,
+              panelCardCss(theme),
+              `<div class="panel" style="padding:40px;font-size:32px;">${html || `<h1>${escapeHtml(title)}</h1>`}</div>`,
+            );
+          await page.setContent(doc, { waitUntil: 'load' });
+        } else {
+          await page.goto(url.trim(), { waitUntil: 'networkidle', timeout: 30_000 });
+        }
+
+        await page.waitForTimeout(400);
+        await assertPageLooksLikeBroll(page);
+        await mkdir(path.dirname(outputPath), { recursive: true });
+        await page.screenshot({ path: outputPath, fullPage: false, type: 'png' });
+        return { ok: true, paths: [outputPath] };
+      } finally {
+        await browser.close();
       }
-
-      await page.waitForTimeout(400);
-      await mkdir(path.dirname(outputPath), { recursive: true });
-      await page.screenshot({ path: outputPath, fullPage: false });
-      await browser.close();
-      return { ok: true, paths: [outputPath] };
     } catch (err) {
       return { ok: false, paths: [], error: err instanceof Error ? err.message : String(err) };
     }

@@ -1,4 +1,4 @@
-import { parseSectionWordBudgets, type SectionWordBudget } from './word-budget.js';
+import { episodeWordBudget } from './word-budget.js';
 
 export interface ScriptBlockAudit {
   block: string;
@@ -6,6 +6,17 @@ export interface ScriptBlockAudit {
   target?: number;
   max?: number;
   status: 'ok' | 'over' | 'under';
+}
+
+export interface ScriptLengthAudit {
+  content: string;
+  totalWords: number;
+  targetWords: number;
+  minWords: number;
+  maxWords: number;
+  status: 'ok' | 'over' | 'under';
+  /** Per-topic block breakdown (informational). */
+  blocks: ScriptBlockAudit[];
 }
 
 export function countNarrationWords(text: string): number {
@@ -27,18 +38,6 @@ function extractNarration(sectionBody: string): string {
   return (match[1] ?? match[2] ?? '').trim();
 }
 
-function findBudget(
-  headingLine: string,
-  budgets: SectionWordBudget[],
-): SectionWordBudget | undefined {
-  const timeMatch = headingLine.match(/\[(\d{1,2}:\d{2})\s*[–-]\s*(\d{1,2}:\d{2})\]/);
-  if (!timeMatch) return undefined;
-  const key = `${timeMatch[1]}–${timeMatch[2]}`;
-  return budgets.find(
-    (b) => b.timeRange === key || b.timeRange.replace(/-/g, '–') === key,
-  );
-}
-
 /** Remove any word-count lines the model may have added (saves tokens, always inaccurate). */
 export function stripScriptWordCountLines(text: string): string {
   return text
@@ -49,27 +48,32 @@ export function stripScriptWordCountLines(text: string): string {
     .trimEnd();
 }
 
+function splitTopicSections(scriptMarkdown: string): string[] {
+  // Prefer ## headings; keep legacy ## [M:SS–M:SS] scripts working.
+  return scriptMarkdown.split(/(?=^##\s+)/m);
+}
+
 /**
- * Strip model word-count junk and audit narration length per block.
- * Does NOT modify narration text — only reports over/under budget.
+ * Audit total narration length against episode band (target −1 / +2 min).
+ * Does NOT modify narration text.
  */
 export function auditScriptWordCounts(
   scriptMarkdown: string,
   wordsPerMinute: number,
-  sourceBrief?: string,
-): { content: string; audits: ScriptBlockAudit[] } {
+  _sourceBrief?: string,
+  targetLengthMinutes?: number,
+): { content: string; audits: ScriptBlockAudit[]; length: ScriptLengthAudit } {
   const wpm = wordsPerMinute > 0 ? wordsPerMinute : 133;
-  const budgets = sourceBrief ? parseSectionWordBudgets(sourceBrief, wpm) : [];
+  const targetMin = targetLengthMinutes && targetLengthMinutes > 0 ? targetLengthMinutes : 10;
+  const budget = episodeWordBudget(targetMin, wpm);
   const cleaned = stripScriptWordCountLines(scriptMarkdown);
-  const audits: ScriptBlockAudit[] = [];
+  const blocks: ScriptBlockAudit[] = [];
+  let totalWords = 0;
 
-  const parts = cleaned.split(/(?=^## \[)/m);
-  if (parts.length <= 1) {
-    return { content: cleaned.endsWith('\n') ? cleaned : `${cleaned}\n`, audits };
-  }
-
-  for (let i = 1; i < parts.length; i++) {
+  const parts = splitTopicSections(cleaned);
+  for (let i = 0; i < parts.length; i++) {
     const part = parts[i];
+    if (!part.trim().startsWith('##')) continue;
     const headingEnd = part.indexOf('\n');
     const headingLine = headingEnd >= 0 ? part.slice(0, headingEnd) : part;
     const body = headingEnd >= 0 ? part.slice(headingEnd + 1) : '';
@@ -78,28 +82,51 @@ export function auditScriptWordCounts(
     if (!narration) continue;
 
     const words = countNarrationWords(narration);
-    const budget = findBudget(headingLine, budgets);
-    const target = budget?.targetWords;
-    const max = budget?.hardMaxWords;
-
-    let status: ScriptBlockAudit['status'] = 'ok';
-    if (target != null && max != null && words > max) status = 'over';
-    else if (target != null && words < target * 0.85) status = 'under';
-
-    audits.push({
+    totalWords += words;
+    blocks.push({
       block: headingLine.replace(/^##\s*/, '').trim(),
       words,
-      target,
-      max,
-      status,
+      status: 'ok',
     });
   }
 
+  // Fallback: whole doc if no What I Should Say blocks parsed
+  if (totalWords === 0) {
+    totalWords = countNarrationWords(cleaned);
+  }
+
+  let status: ScriptLengthAudit['status'] = 'ok';
+  if (totalWords > budget.maxWords) status = 'over';
+  else if (totalWords < budget.minWords) status = 'under';
+
   const content = cleaned.endsWith('\n') ? cleaned : `${cleaned}\n`;
-  return { content, audits };
+  const length: ScriptLengthAudit = {
+    content,
+    totalWords,
+    targetWords: budget.targetWords,
+    minWords: budget.minWords,
+    maxWords: budget.maxWords,
+    status,
+    blocks,
+  };
+
+  return {
+    content,
+    audits: [
+      {
+        block: 'TOTAL',
+        words: totalWords,
+        target: budget.targetWords,
+        max: budget.maxWords,
+        status,
+      },
+      ...blocks,
+    ],
+    length,
+  };
 }
 
-/** @deprecated Use auditScriptWordCounts — kept for compatibility, no longer appends counts to script. */
+/** @deprecated Use auditScriptWordCounts — kept for compatibility. */
 export function annotateScriptWordCounts(
   scriptMarkdown: string,
   wordsPerMinute: number,

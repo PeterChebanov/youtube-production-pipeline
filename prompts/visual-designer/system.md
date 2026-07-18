@@ -120,7 +120,9 @@ Every asset is rendered at **1920×1080** for YouTube. Follow these rules:
   - Use `data.elements` array (each item `type: "box"` with `label` + optional `icon` + `annotation`). Do NOT use `data.boxes`.
 - code: { "language": "typescript", "code": "...", "caption": "one-line purpose", "filename": "optional.ext" }
 - terminal: { "lines": ["$ npm install", "> done"], "title": "optional", "caption": "optional" }
-- browser: { "url": "https://...", "title": "optional", "html": "optional tree HTML", "caption": "optional" }
+- browser: { "url": "optional chrome-bar label", "title": "optional", "html": "**required for demos** — mock page or JSON HTML", "caption": "optional" }
+  - Always put visible content in `html`. Do **not** rely on live `localhost` / API URLs — Playwright uses GET and POST endpoints return Method Not Allowed.
+  - When `html` is present, `url` is chrome-bar text only.
 - ui-cards: { "title": "...", "cards": [{ "heading": "...", "body": "...", "icon": "dollar" }] }
 - illustration: { "prompt": "detailed image prompt", "style_notes": "optional" }
 - motion: { "template": "pipeline-vertical", "title": "...", "steps": [{ "label": "...", "visual": "...", "annotation": "...", "icon": "database" }] }

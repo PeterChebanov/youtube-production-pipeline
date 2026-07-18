@@ -1,6 +1,6 @@
 # Prior coverage (channel-level)
 
-**This is NOT the episode roadmap.** Roadmaps live in each episode's `source-brief.md` (blocks, timecodes, sub-topics for that video).
+**This is NOT the episode roadmap.** Roadmaps live in each episode's `source-brief.md` (topic blocks / sub-topics for that video).
 
 Prior coverage = what your audience **already knows from other videos on the channel** before starting this course.
 

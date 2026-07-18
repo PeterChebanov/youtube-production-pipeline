@@ -77,7 +77,7 @@ function ordinaryModeInstructions(balance: NarrativeBalance): string {
       return `### Default posture: balanced
 - Assume **partial** prior knowledge: some terms are familiar, others are not.
 - Per major concept: ~**5–8 sentences** of theory (what it is, why it matters, key trade-offs), then substantial **practice** aligned with the creator roadmap.
-- Honor block structure and timecodes from the creator roadmap. Theory and practice in the same episode are both first-class — not detached side examples.
+- Honor block structure and topic outline from the creator roadmap. Theory and practice in the same episode are both first-class — not detached side examples.
 - When the roadmap includes implementation steps, treat them as **real build progress** (not hypothetical). Note what was built or decided so it can carry into later episodes / application state.
 - Use \`theory_boost\` for topics needing deeper explanation (~10–15 sentences).
 - Use \`practice_boost\` for topics needing more approaches, comparisons, and results-focused examples.

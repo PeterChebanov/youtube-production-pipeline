@@ -1,1 +1,7 @@
-export { formatBlocksForPrompt, segmentScript } from './segment.js';
+export {
+  assertSegmentationIntegrity,
+  formatBlocksForPrompt,
+  inventoryScriptNarration,
+  segmentScript,
+  type SegmentScriptOptions,
+} from './segment.js';

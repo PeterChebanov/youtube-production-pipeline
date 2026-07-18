@@ -1,12 +1,10 @@
 import {
   BUILD_APP_BALANCE_TARGETS,
+  countNarrationWords,
   readNarrativeFromVideo,
   type NarrativeBalance,
 } from '@ecpe/prompts';
 import { reportProgress } from './progress.js';
-
-const SECTION_RE =
-  /^##\s*\[(\d+):(\d+)\s*[–-]\s*(\d+):(\d+)\]\s*(.+)$/gm;
 
 export interface ScriptSectionTiming {
   title: string;
@@ -14,6 +12,7 @@ export interface ScriptSectionTiming {
   endSec: number;
   durationSec: number;
   kind: 'theory' | 'build' | 'demo' | 'hook' | 'other';
+  words: number;
 }
 
 export function classifyScriptSectionTitle(title: string): ScriptSectionTiming['kind'] {
@@ -29,18 +28,36 @@ export function classifyScriptSectionTitle(title: string): ScriptSectionTiming['
   return 'other';
 }
 
+function extractNarration(sectionBody: string): string {
+  const match = sectionBody.match(
+    /\*\*What I Should Say:\*\*\s*\n(?:"([\s\S]*?)"|([\s\S]*?))(?=\n\*\*|\n---|\n## |$)/i,
+  );
+  if (!match) return '';
+  return (match[1] ?? match[2] ?? '').trim();
+}
+
+/** Balance by topic headers + narration words (no clock timecodes). */
 export function parseScriptSectionTimings(scriptMarkdown: string): ScriptSectionTiming[] {
   const sections: ScriptSectionTiming[] = [];
-  for (const match of scriptMarkdown.matchAll(SECTION_RE)) {
-    const startSec = Number(match[1]) * 60 + Number(match[2]);
-    const endSec = Number(match[3]) * 60 + Number(match[4]);
-    const title = match[5].trim();
+  const parts = scriptMarkdown.split(/(?=^##\s+)/m);
+  for (const part of parts) {
+    if (!part.trim().startsWith('##')) continue;
+    const headingEnd = part.indexOf('\n');
+    const headingLine = (headingEnd >= 0 ? part.slice(0, headingEnd) : part)
+      .replace(/^##\s*/, '')
+      .trim();
+    // Strip legacy clocks if present
+    const title = headingLine.replace(/^\[\d{1,2}:\d{2}\s*[–-]\s*\d{1,2}:\d{2}\]\s*/, '').trim();
+    const body = headingEnd >= 0 ? part.slice(headingEnd + 1) : '';
+    const narration = extractNarration(body);
+    const words = narration ? countNarrationWords(narration) : 0;
     sections.push({
       title,
-      startSec,
-      endSec,
-      durationSec: Math.max(0, endSec - startSec),
+      startSec: 0,
+      endSec: 0,
+      durationSec: words, // reuse field as word weight for share math
       kind: classifyScriptSectionTitle(title),
+      words,
     });
   }
   return sections;
@@ -54,22 +71,33 @@ export function estimateScriptTheoryShare(scriptMarkdown: string): {
   sections: ScriptSectionTiming[];
 } {
   const sections = parseScriptSectionTimings(scriptMarkdown);
-  let theorySec = 0;
-  let practiceSec = 0;
-  let otherSec = 0;
+  let theoryWords = 0;
+  let practiceWords = 0;
+  let otherWords = 0;
   for (const s of sections) {
-    if (s.kind === 'theory') theorySec += s.durationSec;
-    else if (s.kind === 'build' || s.kind === 'demo') practiceSec += s.durationSec;
-    else otherSec += s.durationSec;
+    if (s.kind === 'theory') theoryWords += s.words;
+    else if (s.kind === 'build' || s.kind === 'demo') practiceWords += s.words;
+    else otherWords += s.words;
   }
-  const totalSec = theorySec + practiceSec + otherSec;
-  if (totalSec <= 0) {
-    return { theorySec, practiceSec, totalSec, theoryShare: null, sections };
+  const totalWords = theoryWords + practiceWords + otherWords;
+  if (totalWords <= 0) {
+    return {
+      theorySec: 0,
+      practiceSec: 0,
+      totalSec: 0,
+      theoryShare: null,
+      sections,
+    };
   }
-  // Hook/other counted neither way — share is theory / (theory+practice)
-  const classified = theorySec + practiceSec;
-  const theoryShare = classified > 0 ? theorySec / classified : null;
-  return { theorySec, practiceSec, totalSec, theoryShare, sections };
+  const classified = theoryWords + practiceWords;
+  const theoryShare = classified > 0 ? theoryWords / classified : null;
+  return {
+    theorySec: theoryWords,
+    practiceSec: practiceWords,
+    totalSec: totalWords,
+    theoryShare,
+    sections,
+  };
 }
 
 const CODE_PATH_RE =
@@ -115,7 +143,7 @@ export function warnBuildAppBalanceAfterStage(
       reportProgress({
         stage: stageId,
         message:
-          'Build-app balance check: no timed ## [M:SS–M:SS] sections found — cannot estimate theory/practice split',
+          'Build-app balance check: no ## topic sections with narration found — cannot estimate theory/practice split',
       });
       return;
     }
@@ -125,7 +153,7 @@ export function warnBuildAppBalanceAfterStage(
     if (est.theoryShare > targets.theoryMax + 0.05) {
       reportProgress({
         stage: stageId,
-        message: `Build-app balance ⚠️ theory ~${pct}% of timed blocks (target ${minPct}–${maxPct}% for ${balance}) — lean into code walkthrough/demo`,
+        message: `Build-app balance ⚠️ theory ~${pct}% of classified words (target ${minPct}–${maxPct}% for ${balance}) — lean into code walkthrough/demo`,
       });
     } else if (est.theoryShare < targets.theoryMin - 0.08 && balance === 'theory-first') {
       reportProgress({
@@ -135,7 +163,7 @@ export function warnBuildAppBalanceAfterStage(
     } else {
       reportProgress({
         stage: stageId,
-        message: `Build-app balance OK: theory ~${pct}% (target ${minPct}–${maxPct}% for ${balance})`,
+        message: `Build-app balance OK: theory ~${pct}% of classified words (target ${minPct}–${maxPct}% for ${balance})`,
       });
     }
     return;

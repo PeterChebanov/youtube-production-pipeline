@@ -4,6 +4,7 @@ import { EpisodeAuthoringSchema, type EpisodeAuthoring } from '@ecpe/schemas';
 import { parseYamlFile } from '@ecpe/schemas';
 import { stringify as stringifyYaml } from 'yaml';
 import { ARTIFACTS } from './artifacts.js';
+import { compressDemoWalkthroughForPrompt } from './walkthrough-compress.js';
 
 export function episodeAuthoringFile(episodeRoot: string): string {
   return path.join(episodeRoot, ARTIFACTS.episodeAuthoring);
@@ -29,6 +30,15 @@ export async function writeEpisodeAuthoring(
   await writeFile(episodeAuthoringFile(episodeRoot), stringifyYaml(parsed), 'utf8');
 }
 
+const STAGES_SKIP_WALKTHROUGH = new Set([
+  'educational-review',
+  'youtube-editor',
+  'segment',
+]);
+
+/** Stages that need fuller verification detail for on-camera planning. */
+const STAGES_FULLER_WALKTHROUGH = new Set(['visual-designer']);
+
 export function formatEpisodeAuthoringAppendix(
   authoring: EpisodeAuthoring,
   stageId?: string,
@@ -47,12 +57,17 @@ export function formatEpisodeAuthoringAppendix(
     );
   }
 
-  if (authoring.demo_walkthrough_md.trim()) {
+  if (authoring.demo_walkthrough_md.trim() && (!stageId || !STAGES_SKIP_WALKTHROUGH.has(stageId))) {
+    const maxChars = stageId && STAGES_FULLER_WALKTHROUGH.has(stageId) ? 10_000 : 7_500;
+    const skeleton = compressDemoWalkthroughForPrompt(
+      authoring.demo_walkthrough_md.trim(),
+      maxChars,
+    );
     const header =
       stageId === 'visual-designer'
-        ? '## Demo walkthrough + verification (code-map index)'
-        : '## Demo walkthrough (implementation index — mandatory for build-app)';
-    parts.push(`${header}\n\n${authoring.demo_walkthrough_md.trim()}`);
+        ? '## Demo walkthrough skeleton + verification (code-map index)'
+        : '## Demo walkthrough skeleton (implementation spine — mandatory for build-app)';
+    parts.push(`${header}\n\n${skeleton}`);
   }
 
   if (parts.length === 0) return undefined;

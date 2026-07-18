@@ -287,6 +287,18 @@ async function buildVisualPlanContext(
   context.blocksSummary = formatBlocksForPrompt(segments);
   context.planLimitsTable = formatPlanLimitsTable(segments);
 
+  const totalSec = segments.blocks.reduce((s, b) => s + b.estimated_duration_sec, 0);
+  const targetMin = Number(context.video?.target_length_minutes) || 10;
+  const floorSec = targetMin * 60 * 0.55;
+  if (totalSec < floorSec) {
+    throw new Error(
+      `Cannot run visual-plan: narration-segments cover ~${(totalSec / 60).toFixed(1)} min ` +
+        `but target is ${targetMin} min (minimum ${(floorSec / 60).toFixed(1)} min). ` +
+        `Re-run knowledge stage "segment" — if it still fails, the final script lost spoken text ` +
+        `(e.g. multiple **What I Should Say:** under one ## were dropped historically).`,
+    );
+  }
+
   const sourceBrief = await readSourceBrief(projectPath);
   if (sourceBrief) context.sourceBrief = sourceBrief;
 

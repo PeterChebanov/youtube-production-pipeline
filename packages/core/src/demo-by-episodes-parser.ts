@@ -17,14 +17,21 @@ export interface ParsedDemoEpisode {
   body: string;
 }
 
-const GIT_TAG = /\*\*Git tag:\*\*\s*`([^`]+)`/;
-const EPISODE_GOAL = /^### Episode goal\s*\n([\s\S]*?)(?=\n### |\n---|\n## EP|\Z)/m;
+const GIT_TAG =
+  /(?:\*\*)?Git tag(?:\*\*)?:\s*`?([A-Za-z0-9._/-]+)`?/i;
+const EPISODE_GOAL =
+  /(?:^### Episode goal\s*\n|^Episode goal\s*\n)([\s\S]*?)(?=\n### |\nEpisode |\n---|\n## EP|\nStep \d+|\Z)/im;
 const DONE_WHEN = /\*\*EP\d+ done when:\*\*\s*(.+)/i;
-const FUNCTIONAL_STEP =
-  /^#### Step \d+\s+[—–-]\s+`([^`]+)`\s+[·•]\s+functional\s*$/gm;
-const OPS_STEP = /^#### Step \d+\s+[—–-]\s+(.+?)\s+[·•]\s+ops\s*$/gm;
+/** Strict markdown: #### Step N — `path` · functional */
+const FUNCTIONAL_STEP_STRICT =
+  /^#{0,4}\s*Step\s+(\d+)\s+[—–-]\s+`([^`]+)`\s+[·•]\s+functional\s*$/gim;
+/** Loose paste: Step N — retrieval/keyword.py · functional (optional ####, optional backticks) */
+const FUNCTIONAL_STEP_LOOSE =
+  /^#{0,4}\s*Step\s+(\d+)\s+[—–-]\s+(.+?)\s+[·•]\s+functional\s*$/gim;
+const OPS_STEP =
+  /^#{0,4}\s*Step\s+(\d+)\s+[—–-]\s+(.+?)\s+[·•]\s+ops\s*$/gim;
 const DO_LINE =
-  /^-\s+\*\*Do:\*\*\s*(?:`([^`]+)`|(.+?))\s*$/gm;
+  /^(?:-\s+)?(?:\*\*)?Do:(?:\*\*)?\s*(?:`([^`]+)`|(.+?))\s*$/gim;
 const BASH_BLOCK = /```bash\n([\s\S]*?)```/g;
 
 const IDE_DO_PATTERNS = [
@@ -75,25 +82,77 @@ export function getDemoEpisode(
 
 function extractFunctionalPaths(body: string): { path: string; purpose: string }[] {
   const out: { path: string; purpose: string }[] = [];
-  let m: RegExpExecArray | null;
-  const re = new RegExp(FUNCTIONAL_STEP.source, 'gm');
-  while ((m = re.exec(body)) !== null) {
-    const pathRaw = m[1]!.trim();
+  const seen = new Set<string>();
+
+  const pushPath = (pathRaw: string, purpose: string) => {
     for (const p of splitPaths(pathRaw)) {
-      out.push({ path: p, purpose: path.basename(p) });
+      const cleaned = p.replace(/^[`"']+|[`"']+$/g, '').trim();
+      if (!cleaned || seen.has(cleaned)) continue;
+      // Prefer real source files over prose titles
+      if (!/\.[a-z0-9]{1,8}$/i.test(cleaned) && !cleaned.includes('/')) continue;
+      seen.add(cleaned);
+      out.push({ path: cleaned, purpose: purpose || path.basename(cleaned) });
+    }
+  };
+
+  let m: RegExpExecArray | null;
+  const strict = new RegExp(FUNCTIONAL_STEP_STRICT.source, 'gim');
+  while ((m = strict.exec(body)) !== null) {
+    pushPath(m[2]!.trim(), path.basename(m[2]!.trim()));
+  }
+
+  if (out.length === 0) {
+    const loose = new RegExp(FUNCTIONAL_STEP_LOOSE.source, 'gim');
+    while ((m = loose.exec(body)) !== null) {
+      const heading = m[2]!.trim();
+      // Prefer backtick paths in heading, else whole heading if it looks like a path
+      const tick = [...heading.matchAll(/`([^`]+)`/g)].map((x) => x[1]!);
+      if (tick.length > 0) {
+        for (const t of tick) pushPath(t, path.basename(t));
+      } else {
+        pushPath(heading, path.basename(heading.split(/\s+/)[0] ?? heading));
+      }
     }
   }
+
+  // Paths listed under functional steps whose heading is not itself a file
+  // (e.g. "API surface · functional" listing api/routes/retrieve.py in the body).
+  const looseSteps = new RegExp(FUNCTIONAL_STEP_LOOSE.source, 'gim');
+  const stepMatches = [...body.matchAll(looseSteps)];
+  const anyStep = [...body.matchAll(/^#{0,4}\s*Step\s+(\d+)\s+[—–-]/gim)];
+  for (let i = 0; i < stepMatches.length; i++) {
+    const heading = stepMatches[i]![2]!.trim();
+    if (/\.[a-z0-9]{1,8}$/i.test(heading.replace(/`/g, '')) || heading.includes('/')) {
+      continue; // already handled as a path heading
+    }
+    const start = stepMatches[i]!.index ?? 0;
+    const nextAny = anyStep.find((s) => (s.index ?? 0) > start);
+    const end = nextAny?.index ?? body.length;
+    const chunk = body.slice(start, end);
+    for (const match of chunk.matchAll(
+      /\b((?:api|retrieval|db)\/[\w./-]+\.(?:py|sql|ts|js))\b/g,
+    )) {
+      pushPath(match[1]!, path.basename(match[1]!));
+    }
+  }
+
   return out;
 }
 
 function extractOpsScope(body: string): string[] {
   const scope: string[] = [];
   let m: RegExpExecArray | null;
-  const re = new RegExp(OPS_STEP.source, 'gm');
+  const re = new RegExp(OPS_STEP.source, 'gim');
   while ((m = re.exec(body)) !== null) {
-    const title = m[1]!;
+    const title = m[2]!;
     for (const match of title.matchAll(/`([^`]+)`/g)) {
       scope.push(match[1]!);
+    }
+    // Loose: path-like tokens in the heading (migrations/002_x.sql)
+    for (const match of title.matchAll(
+      /\b[\w./-]+\.(?:sql|yml|yaml|toml|env|example|sh|md)\b/gi,
+    )) {
+      scope.push(match[0]!);
     }
     if (/docker-compose/i.test(title)) scope.push('docker-compose.yml');
     if (/dockerfile/i.test(title)) scope.push('Dockerfile');

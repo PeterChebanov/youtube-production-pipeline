@@ -33,6 +33,9 @@ import {
 } from './build-app-balance-gate.js';
 import { reportProgress } from './progress.js';
 
+/** Only retry length when clearly over the soft max (avoid routine 2–3× cost). */
+const LENGTH_RETRY_OVERSHOOT_RATIO = 1.12;
+
 const LLM_STAGES = new Set<KnowledgeStageId>(
   KNOWLEDGE_STAGES.filter((s) => s !== 'segment'),
 );
@@ -142,7 +145,9 @@ async function runSegmentStage(projectPath: string): Promise<RunStageResult> {
   const videoRaw = await readArtifact(projectPath, ARTIFACTS.video);
   const video = parseYamlFile(videoRaw, VideoSchema);
   const script = await readArtifact(projectPath, ARTIFACTS.finalScript);
-  const segments = segmentScript(script, video.words_per_minute);
+  const segments = segmentScript(script, video.words_per_minute, {
+    targetLengthMinutes: video.target_length_minutes,
+  });
   const content = JSON.stringify(segments, null, 2);
   const outputFile = STAGE_OUTPUT.segment;
 
@@ -195,27 +200,52 @@ export async function runStage(
   });
 
   if (stageId === 'script-writer' || stageId === 'youtube-editor') {
-    const wpm = Number((context.video as { words_per_minute?: number })?.words_per_minute) || 133;
-    let prepared = stripScriptWordCountLines(content);
-    prepared = expandContractionsForNarration(prepared);
-    const { content: audited, audits } = auditScriptWordCounts(
-      prepared,
-      wpm,
-      context.sourceBrief,
-    );
+    const videoMeta = context.video as {
+      words_per_minute?: number;
+      target_length_minutes?: number;
+    };
+    const wpm = Number(videoMeta?.words_per_minute) || 133;
+    const targetMin = Number(videoMeta?.target_length_minutes) || 10;
+
+    const finalize = (raw: string) => {
+      let prepared = stripScriptWordCountLines(raw);
+      prepared = expandContractionsForNarration(prepared);
+      return auditScriptWordCounts(prepared, wpm, context.sourceBrief, targetMin);
+    };
+
+    let { content: audited, length } = finalize(content);
     content = audited;
-    for (const a of audits) {
-      if (a.status === 'over' && a.target != null && a.max != null) {
-        reportProgress({
-          stage: stageId,
-          message: `Word audit — ${a.block}: ${a.words} words (target ${a.target}, max ${a.max}) ⚠️ OVER BUDGET`,
-        });
-      } else if (a.status === 'under' && a.target != null) {
-        reportProgress({
-          stage: stageId,
-          message: `Word audit — ${a.block}: ${a.words} words (target ${a.target}) — under target`,
-        });
-      }
+
+    reportProgress({
+      stage: stageId,
+      message: `Length audit — ${length.totalWords} words (band ${length.minWords}–${length.maxWords}, target ${length.targetWords})${length.status === 'over' ? ' ⚠️ OVER' : length.status === 'under' ? ' — under band' : ' OK'}`,
+    });
+
+    // Rare safety valve: one short retry only if clearly over max (not routine fail loop).
+    if (length.status === 'over' && length.totalWords > length.maxWords * LENGTH_RETRY_OVERSHOOT_RATIO) {
+      reportProgress({
+        stage: stageId,
+        message: `Length retry (1×) — cut to ≤${length.maxWords} words; keep code walkthrough + hero demo`,
+      });
+      const retryUser = `${user}
+
+---
+LENGTH CORRECTION (mandatory): spoken narration is ${length.totalWords} words; allowed maximum is ${length.maxWords}.
+Rewrite the full script shorter. Cut repetition and theory first. Keep implementation walkthrough and the hero demo that shows how results look. No [M:SS–M:SS] timecodes — topic headers only. Do not print word counts.`;
+      const retryRaw = await complete({
+        provider: options.provider,
+        model: options.model,
+        system,
+        user: retryUser,
+        maxTokens: 8192,
+      });
+      const retry = finalize(retryRaw);
+      content = retry.content;
+      length = retry.length;
+      reportProgress({
+        stage: stageId,
+        message: `Length after retry — ${length.totalWords} words (band ${length.minWords}–${length.maxWords})${length.status === 'over' ? ' ⚠️ still over (accepted)' : ' OK'}`,
+      });
     }
   }
 

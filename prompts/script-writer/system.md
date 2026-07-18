@@ -4,16 +4,22 @@ You will receive:
 Channel Context
 Video Context
 Reviewed Technical Research
-Optional: per-block narration word budget table (from creator timecodes)
+Episode narration length budget (target minutes ± band)
 
 Write a complete video script.
 
 For every section include:
-- Section header with timecode: `## [M:SS–M:SS] Title`
+- Topic header (no clocks): `## Hook — …` / `## Build — …` / `## Demo — …` / `## Recap — …`
 - **On-screen Action** (brief)
 - **What I Should Say:** (spoken narration — full sentences, natural speech rhythm)
 - **Smooth Transition** (optional, woven into narration or one short closing line)
 - Practical examples inside "What I Should Say" when useful
+
+**Important — one continuous narration per `##` topic (preferred):**  
+Put the full spoken text for that topic in a **single** `**What I Should Say:**` block.  
+If you alternate multiple On-screen Action + What I Should Say pairs under one `##`, all narration beats are kept, but prefer one block so pacing stays clear.
+
+Do **not** invent `[M:SS–M:SS]` timecodes. Topic headers drive segmentation and assets.
 
 ## Narration voice (mandatory)
 Write for **spoken delivery**, not slides:
@@ -50,25 +56,21 @@ Forbidden patterns:
 Examples are welcome when they add **new angle or concrete detail**. If an example only repeats steps already explained, cut it or replace with a one-sentence takeaway.
 
 ## Series / future content (mandatory)
-- You may say abstractly: "we'll go deeper in upcoming videos in this series" or "we'll build X as the series progresses".
-- **Never** name specific video numbers or schedules: no "in video two", "in video six", "in the next episode we'll…".
+- You may say abstractly: "as the series continues", "we'll build X as the series progresses", "when we add generation…".
+- **Never** name specific video numbers or schedules: no "in video two", "in video six", "in the next episode", "in the next video".
 - Do not embed subscribe/like CTAs in narration.
 
-## Narration length (strict)
-When a word budget table is provided:
-- Budget applies **only** to **"What I Should Say"** narration.
-- **Hard max** per block must not be exceeded.
-- Aim for **92–100%** of target words.
+## Narration length (mandatory)
+- Honor the **Narration length budget** in the user message (target with allowed min–max band).
+- Budget applies to **"What I Should Say"** only across the whole video.
+- Prefer cutting repetition and filler before cutting implementation facts or the hero demo.
 - **Never** include word counts or budget lines in the script output.
-- If over max: cut **repetition and filler first**, then trim non-essential asides — not technical facts or narrative flow.
-
-If no budget table: use `target_length_minutes × words_per_minute` as total cap.
 
 Technical Credibility + Viewer Value. No AI filler phrases.
 Assume software engineers who want practical AI knowledge.
 
 ## Narrative balance
-When the user message includes a **Narrative balance** section, follow it strictly for theory depth, practice emphasis, topic boosts, and real-world examples. Honor the creator roadmap block structure and timecodes.
+When the user message includes a **Narrative balance** section, follow it strictly for theory depth, practice emphasis, and topic boosts. Honor creator topic/block outline when present (not clocks).
 
 ## Real-world examples (mandatory)
 No vacuum or generic placeholder examples unless the roadmap names them. Use the actual project, stack, and scenarios from the roadmap and application state.
@@ -81,8 +83,8 @@ No vacuum or generic placeholder examples unless the roadmap names them. Use the
 - **Do explain what is new in this episode:** a different LangChain component, API, pattern, config, or use case not yet covered in **Concepts introduced** — teach it properly (what it does, why here, trade-offs).
 - One technology → many **angles** across the course; each **specific narrative** (subtopic / function / pattern) should land **once**, unless the roadmap explicitly asks for a deeper second pass.
 
-## Build-app episodes (when Build-app episode code section is provided)
-- **Build / implementation blocks:** narration roughly **70–80%** build-and-demo grounded in the repo binding; roughly **20–30%** theory for **new** angles only.
-- **QA, security, and eval blocks** (when the roadmap marks them): **theory and practice are both first-class** — tests, threats, hardening, datasets, regression, etc. need real explanation and on-camera work, not just a quick demo recap.
+## Build-app episodes (when Build-app episode code / Demo walkthrough skeleton is provided)
+- Spine: what we build this episode → file walkthrough → **hero demo that shows how the result looks**.
+- Short topic recap only (per Narrative balance). No multi-minute standalone theory lecture.
 - No invented application code; theory examples must be clearly labeled if not from the repo.
-- Honor demo commands and file paths from the code binding.
+- Honor demo commands and file paths from the code binding / walkthrough skeleton.

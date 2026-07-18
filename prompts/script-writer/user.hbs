@@ -7,17 +7,19 @@
 - Topic: {{video.topic}}
 - Target length: {{video.target_length_minutes}} minutes at {{video.words_per_minute}} WPM
 {{#if totalNarrationWords}}
-- Total narration budget: {{totalNarrationWords}} words (spoken text only)
+- Total narration target: {{totalNarrationWords}} words (spoken text only)
+{{/if}}
+{{#if minNarrationWords}}
+- Allowed band: {{minNarrationWords}}–{{maxNarrationWords}} words
 {{/if}}
 
 {{#if wordBudgetTable}}
-## Per-block narration word budget (mandatory)
 {{wordBudgetTable}}
 
 {{/if}}
 {{#if sourceBrief}}
 ## Creator roadmap (source material)
-Honor the intended block structure, timecodes, on-screen actions, and narrative talking points where they fit the research. Do not treat bullets as final narration text.
+Honor intended **topic blocks** and talking points where they fit the research. Do not invent clock timecodes. Do not treat bullets as final narration text.
 
 {{sourceBrief}}
 
@@ -30,4 +32,5 @@ Honor the intended block structure, timecodes, on-screen actions, and narrative 
 {{lookup artifacts "technical-review.md"}}
 
 Write the first draft script (script.md) based on the research and technical review.
-Self-check each block: no repeated full explanations of the same flow; one hook per block; no numbered future-video promises.
+Use `## Topic` headers only (Hook / Build / Demo / Recap) — no `[M:SS–M:SS]`.
+Self-check: stay inside the length band; no repeated full explanations of the same flow; one hook per block; no numbered future-video promises.

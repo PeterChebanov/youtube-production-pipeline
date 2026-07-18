@@ -24,7 +24,7 @@ Scan **each block** for ideas explained more than once:
 - Multiple hooks/curiosity lines that restate the same point.
 
 For each hit, report:
-- **Block** (timecode header)
+- **Block** (`##` topic header)
 - **What repeats** (quote or paraphrase the duplicate passages)
 - **What to cut or merge** (specific — which paragraph/sentence role to remove)
 - **What to keep** (the single best version)
@@ -74,6 +74,7 @@ Explain why each recommendation improves learning.
 ## Length and format (strict)
 - **Maximum 1,200 words** for the entire review.
 - Bullet recommendations only — no rewritten script passages.
-- Do **not** recommend adding large amounts of narration; respect the video word budget.
+- Do **not** recommend adding large amounts of narration; respect the video word budget band.
+- Include a **CUT for budget** section when the draft feels long: list concrete cuts that free words without removing the hero demo.
 - When suggesting simplification, say **preserve spoken flow** — no telegraphic choppy rewrites.
 - Every "add X" suggestion must include **"remove Y"** in the same block to stay on time.

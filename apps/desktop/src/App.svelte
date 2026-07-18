@@ -1235,16 +1235,16 @@
           <div class="brief-header">
             <div>
               <div class="field-label">
-                Theoretical narrative
+                Episode outline
                 {#if courseInfo.course.builds_application}
-                  <span class="muted">(recommended)</span>
+                  <span class="muted">(optional)</span>
                 {:else}
                   <span class="muted">(optional)</span>
                 {/if}
               </div>
               <p class="muted">
-                Your creator roadmap for this episode — timecodes, theory/practice balance, what to teach.
-                Saved as <code>source-brief.md</code>.
+                Topic blocks and talking points for this episode (no clock timecodes). Saved as
+                <code>source-brief.md</code>. For build-app, Demo walkthrough is the primary spine.
               </p>
             </div>
             <button
@@ -1259,7 +1259,7 @@
           <textarea
             bind:value={newEpisodeBrief}
             rows="8"
-            placeholder="Paste the theoretical plan for this episode…"
+            placeholder="Paste topic outline for this episode (optional)…"
           ></textarea>
         </div>
         {#if courseInfo.course.builds_application}
@@ -1345,8 +1345,7 @@
       <div class="card">
         <h2>Creator roadmap</h2>
         <p class="muted">
-          Edit the planning document sent to LLM stages. Pipeline uses this as intent — research still validates and
-          expands.
+          Optional topic outline for LLM stages (no clock timecodes). For build-app, Demo walkthrough is the primary spine.
         </p>
         <div class="actions">
           <button class="secondary" type="button" onclick={() => importTextFile('project')} disabled={busy}>

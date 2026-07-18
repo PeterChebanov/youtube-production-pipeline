@@ -47,19 +47,50 @@ export function resolveCodeAnchors(
       continue;
     }
 
-    for (const label of hint.labels) {
-      const sym = findSymbolBlock(lines, label);
-      if (sym) {
-        anchors.push({
-          label: hint.label ?? label,
-          ...sym,
-          focus: hint.focus === 'types' ? 'types' : hint.focus === 'functions' ? 'functions' : 'custom',
-        });
+    if (hint.focus === 'types' || hint.focus === 'functions' || hint.focus === 'custom') {
+      const autoLabels =
+        hint.focus === 'types'
+          ? findTopLevelNames(lines, 'class')
+          : hint.focus === 'functions'
+            ? findTopLevelNames(lines, 'def')
+            : [];
+      const tryLabels = hint.labels.length > 0 ? hint.labels : autoLabels;
+      let matched = 0;
+      for (const label of tryLabels) {
+        const sym = findSymbolBlock(lines, label);
+        if (sym) {
+          matched++;
+          anchors.push({
+            // Prefer real symbol name; keep pedagogical label only when caller
+            // supplied exactly one explicit label.
+            label: hint.labels.length === 1 && hint.label ? hint.label : label,
+            ...sym,
+            focus: hint.focus === 'types' ? 'types' : hint.focus === 'functions' ? 'functions' : 'custom',
+          });
+        }
       }
+      // Path-derived labels (e.g. Keyword from keyword.py) often miss real symbols
+      // (keyword_search) — fall back to every top-level class/def in the file.
+      if (matched === 0 && autoLabels.length > 0 && hint.labels.length > 0) {
+        for (const label of autoLabels) {
+          const sym = findSymbolBlock(lines, label);
+          if (sym) {
+            anchors.push({
+              label,
+              ...sym,
+              focus: hint.focus === 'types' ? 'types' : 'functions',
+            });
+          }
+        }
+      }
+      continue;
     }
   }
 
-  if (anchors.length === 0) {
+  // Imports-only maps are useless for walkthrough episodes — promote to full file
+  // when no type/function anchors resolved (common when focus.labels were empty).
+  const meaningful = anchors.filter((a) => a.focus !== 'imports');
+  if (meaningful.length === 0) {
     return [wholeFileAnchor(lines, 'full')];
   }
 
@@ -104,6 +135,20 @@ function findImportsBlock(lines: string[]): { start_line: number; end_line: numb
   }
   if (end >= start) return { start_line: start, end_line: end };
   return { start_line: 1, end_line: Math.min(25, lines.length) };
+}
+
+function findTopLevelNames(lines: string[], kind: 'class' | 'def'): string[] {
+  const names: string[] = [];
+  const re =
+    kind === 'class'
+      ? /^class\s+([A-Za-z_][\w]*)\b/
+      : /^(?:async\s+)?def\s+([A-Za-z_][\w]*)\b/;
+  for (const line of lines) {
+    if (/^\s/.test(line)) continue; // nested only
+    const m = line.match(re);
+    if (m?.[1]) names.push(m[1]);
+  }
+  return names;
 }
 
 function findSymbolBlock(
@@ -170,9 +215,11 @@ export function defaultFocusForFunctionalStep(stepTitle: string): ScriptSourceFo
 function extractSymbolCandidates(text: string): string[] {
   const out: string[] = [];
   const backtick = text.match(/`([^`]+)`/);
-  if (backtick) {
-    const base = path.basename(backtick[1]!, path.extname(backtick[1]!));
-    if (base && base !== 'py') out.push(toPascalCase(base), toSnakeCase(base));
+  const raw = (backtick?.[1] ?? text).trim();
+  if (!raw) return [];
+  const base = path.basename(raw, path.extname(raw));
+  if (base && base !== 'py') {
+    out.push(toPascalCase(base), toSnakeCase(base));
   }
   return [...new Set(out.filter(Boolean))];
 }

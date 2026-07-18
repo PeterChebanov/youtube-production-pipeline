@@ -1,3 +1,16 @@
+/** Soft episode length band: target −1 min … target +2 min (e.g. 10 → 9–12). */
+export const BUDGET_MIN_OFFSET_MINUTES = 1;
+export const BUDGET_MAX_OFFSET_MINUTES = 2;
+
+export interface EpisodeWordBudget {
+  targetMinutes: number;
+  wordsPerMinute: number;
+  targetWords: number;
+  minWords: number;
+  maxWords: number;
+}
+
+/** @deprecated Kept for callers that still pass brief clocks; prefer episodeWordBudget. */
 export interface SectionWordBudget {
   timeRange: string;
   title: string;
@@ -12,7 +25,7 @@ function parseClockToMinutes(clock: string): number {
   return m + s / 60;
 }
 
-/** Parse `[M:SS–M:SS] Title` blocks from creator roadmap or script outline. */
+/** Legacy: parse `[M:SS–M:SS] Title` if present. Prefer topic headers + episode budget. */
 export function parseSectionWordBudgets(
   text: string,
   wordsPerMinute: number,
@@ -40,6 +53,7 @@ export function parseSectionWordBudgets(
   return budgets;
 }
 
+/** @deprecated Prefer formatEpisodeWordBudget. */
 export function formatWordBudgetTable(
   budgets: SectionWordBudget[],
   wordsPerMinute: number,
@@ -63,11 +77,31 @@ export function formatWordBudgetTable(
   lines.push(
     `**Total narration budget:** ${totalTarget} words (~${Math.round(totalMin * 10) / 10} min @ ${wordsPerMinute} WPM).`,
   );
-  lines.push(
-    '**Hard rule:** "What I Should Say" per block must not exceed Hard max. Aim for 92–100% of Target. Do not print word counts in the script.',
-  );
-
   return lines.join('\n');
+}
+
+export function episodeWordBudget(
+  targetLengthMinutes: number,
+  wordsPerMinute: number,
+): EpisodeWordBudget {
+  const targetMinutes = targetLengthMinutes > 0 ? targetLengthMinutes : 10;
+  const wpm = wordsPerMinute > 0 ? wordsPerMinute : 133;
+  const targetWords = Math.round(targetMinutes * wpm);
+  const minWords = Math.round(Math.max(1, targetMinutes - BUDGET_MIN_OFFSET_MINUTES) * wpm);
+  const maxWords = Math.round((targetMinutes + BUDGET_MAX_OFFSET_MINUTES) * wpm);
+  return { targetMinutes, wordsPerMinute: wpm, targetWords, minWords, maxWords };
+}
+
+export function formatEpisodeWordBudget(budget: EpisodeWordBudget): string {
+  return [
+    '## Narration length budget (mandatory — total spoken words only)',
+    '',
+    `- **Target:** ${budget.targetWords} words (~${budget.targetMinutes} min @ ${budget.wordsPerMinute} WPM)`,
+    `- **Allowed band:** ${budget.minWords}–${budget.maxWords} words (~${budget.targetMinutes - BUDGET_MIN_OFFSET_MINUTES}–${budget.targetMinutes + BUDGET_MAX_OFFSET_MINUTES} min)`,
+    '- Stay inside the band. Prefer cutting repetition/filler before cutting implementation facts or the hero demo.',
+    '- Do **not** invent clock timecodes (`[M:SS–M:SS]`). Use topic headers: `## Hook — …`, `## Build — …`, `## Demo — …`, `## Recap — …`.',
+    '- Do **not** print word counts in the script.',
+  ].join('\n');
 }
 
 export function enrichWordBudgetContext(
@@ -76,15 +110,16 @@ export function enrichWordBudgetContext(
     video?: Record<string, unknown>;
     wordBudgetTable?: string;
     totalNarrationWords?: number;
+    minNarrationWords?: number;
+    maxNarrationWords?: number;
   },
 ): void {
   const wpm = Number(context.video?.words_per_minute) || 133;
-  const brief = context.sourceBrief?.trim();
-  if (!brief) return;
+  const targetMin = Number(context.video?.target_length_minutes) || 10;
+  const budget = episodeWordBudget(targetMin, wpm);
 
-  const budgets = parseSectionWordBudgets(brief, wpm);
-  if (budgets.length === 0) return;
-
-  context.wordBudgetTable = formatWordBudgetTable(budgets, wpm);
-  context.totalNarrationWords = budgets.reduce((sum, b) => sum + b.targetWords, 0);
+  context.totalNarrationWords = budget.targetWords;
+  context.minNarrationWords = budget.minWords;
+  context.maxNarrationWords = budget.maxWords;
+  context.wordBudgetTable = formatEpisodeWordBudget(budget);
 }

@@ -52,7 +52,8 @@ Template: [`templates/episode-code.json`](../templates/episode-code.json)
 2. **Prompt injection** — only **this episode's** JSON is formatted and appended (not the whole course).
 3. **Repo files** — if `repo_path` is set, `script_sources` contents are injected (12k chars/file cap).
 4. **Memory** — `application-state.md` and `prior-coverage.md` work as in regular courses.
-5. **Balance soft-check** — after research/script, logs warn if timed Theory blocks exceed the mode target (does not fail the run).
+5. **Balance soft-check** — after research/script, logs warn if Theory share exceeds the mode target (does not fail the run).
+6. **Length band** — `target_length_minutes` → allowed spoken words ≈ (T−1)…(T+2) minutes; topic headers only (no `[M:SS]`). Demo walkthrough is compressed to a skeleton before prompt inject.
 
 ---
 

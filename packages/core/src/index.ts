@@ -1,6 +1,7 @@
 export * from './build-app.js';
 export * from './build-app-balance-gate.js';
 export * from './build-app-context.js';
+export * from './walkthrough-compress.js';
 export * from './code-map.js';
 export * from './code-anchors.js';
 export * from './demo-by-episodes-parser.js';

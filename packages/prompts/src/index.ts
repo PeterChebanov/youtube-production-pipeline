@@ -24,11 +24,17 @@ export {
   countNarrationWords,
   stripScriptWordCountLines,
   type ScriptBlockAudit,
+  type ScriptLengthAudit,
 } from './script-annotate.js';
 export {
+  BUDGET_MAX_OFFSET_MINUTES,
+  BUDGET_MIN_OFFSET_MINUTES,
   enrichWordBudgetContext,
+  episodeWordBudget,
+  formatEpisodeWordBudget,
   formatWordBudgetTable,
   parseSectionWordBudgets,
+  type EpisodeWordBudget,
   type SectionWordBudget,
 } from './word-budget.js';
 export {

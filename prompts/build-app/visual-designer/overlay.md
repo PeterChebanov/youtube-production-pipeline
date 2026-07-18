@@ -17,11 +17,13 @@ Plan B-roll for a **real repository** — code scenes must use **repository anch
 ### Terminal / browser
 
 - Use **terminal** for demo commands and hero CLI/JSON output from Demo walkthrough verification
-- Use **browser** for curl JSON responses when narration describes API results
+- Use **browser** for curl JSON / API result visuals — put the **mock response HTML/JSON in `data.html`**. Never depend on live `localhost` URLs (Playwright GET → Method Not Allowed on POST routes).
+- `data.url` is optional chrome-bar label only when `html` is present.
 
 ### Priority
 
-Layer 1 visuals: functional code + hero demo output.
+Layer 1 visuals: functional **code** scenes (`renderer: "code"` + Code map anchors) + hero demo output.
+When the walkthrough / script discusses specific repo files and Code map lists them, **prefer `code` over browser/excalidraw** for those spans.
 Layer 2 visuals: architecture diagrams, brief infra mentions — shorter holds.
 
-Rotate renderers; do not put an entire block in one motion scene when code walkthrough is narrated.
+Rotate renderers; do not put an entire build walkthrough in one browser/motion scene when code files are narrated.

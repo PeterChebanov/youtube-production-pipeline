@@ -7,10 +7,13 @@
 - Title: {{video.title}}
 - Topic: {{video.topic}}
 - Target length: {{video.target_length_minutes}} minutes
+{{#if totalNarrationWords}}
+- Narration target: {{totalNarrationWords}} words; band {{minNarrationWords}}–{{maxNarrationWords}}
+{{/if}}
 
 {{#if sourceBrief}}
 ## Creator roadmap (source material)
-Check educational alignment against the creator's planned goals, blocks, and prep checklist.
+Check educational alignment against the creator's planned goals and topic blocks.
 
 {{sourceBrief}}
 
@@ -21,3 +24,6 @@ Check educational alignment against the creator's planned goals, blocks, and pre
 
 Provide an educational review in markdown.
 Prioritize **Redundancy & Repetition** — flag every duplicate idea inside a block with concrete cut/keep guidance.
+Also flag **same mechanism twice** (Theory/Recap + Build) and oversized closing Recap.
+If the draft is long for the band, add **CUT for budget** with concrete removals (keep hero demo).
+Scrub "next video/episode" language.

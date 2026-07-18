@@ -208,8 +208,8 @@ export async function renderAssets(
 
     if (result.ok && result.paths[0]) {
       rendered += 1;
-      const relStatic =
-        result.staticPath ?? (staticPath ? relativeAssetPath(projectRoot, staticPath) : undefined);
+      const absStatic = result.staticPath ?? staticPath;
+      const relStatic = absStatic ? relativeAssetPath(projectRoot, absStatic) : undefined;
       entries.push(
         sceneToManifestEntry(
           scene,

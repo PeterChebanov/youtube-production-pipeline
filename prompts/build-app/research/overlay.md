@@ -12,24 +12,23 @@ Honor the **Narrative balance** appendix percentages for this episode. In build-
 | balanced | ~50% | ~50% |
 | theory-first | ~35% | ~65% (still must map to real files — not a pure lecture) |
 
-**Practice** = functionality built this episode, tools/imports that deliver it, file-by-file walkthrough order, hero demo.
-**Theory** = short refresh so the viewer can follow the code (what a concept is *here*, why this import/tool, architecture intent). Not a standalone lecture from another course.
+**Practice** = functionality built this episode, tools/imports, file-by-file walkthrough, hero demo that shows how results look.
+**Theory** = short refresh so the viewer can follow the code.
 
-When Demo walkthrough is present, it is the **primary** outline. A short creator roadmap must not expand Must Know into a lecture that crowds out implementation.
+The **Demo walkthrough skeleton** is the primary outline (not a license to lecture every detail in the raw walkthrough).
 
 ### Inputs you receive
 
-- **Creator roadmap** (`source-brief`) — planned structure (secondary to walkthrough in build-app)
-- **Demo walkthrough** — what was implemented, in what order, verification steps
+- **Creator roadmap** (`source-brief`) — optional topic outline (secondary)
+- **Demo walkthrough skeleton** — goal, file order, outcomes, money-shot demo
 - **Episode code binding** — real repo files and git checkpoint
-- **Creator research focus** (if provided) — concentrate here
+- **Creator research focus** (if provided)
 
 ### Research rules for build-app
 
-1. Support the **walkthrough order** from Demo walkthrough — do not reorder files arbitrarily.
-2. Prioritize **implementation facts** (paths, types, functions, schema, CLI/HTTP) over ecosystem essays.
-3. Must Know should be dominated by **this episode's files and APIs**. For each important file: role, key imports/tools, main types/methods, outcome in the app.
-4. Theory topics already in **Prior coverage** or **Concepts introduced** → **callback only** (1–2 sentences).
-5. If Creator research focus is set, weight Must Know / Should Know toward those topics.
-6. Respect **Narrative balance** percentages above.
-7. Flag gaps where walkthrough mentions a file but implementation details are thin.
+1. Follow walkthrough **file order** — do not reorder arbitrarily.
+2. Must Know = implementation facts (paths, types, functions, schema, CLI/HTTP).
+3. Theory = short "Should refresh" bullets only; Prior coverage / Concepts → callback only.
+4. Call out the **hero demo**: what the viewer must *see* (e.g. chunk rows with overlap text), not only pass/fail commands.
+5. Respect Narrative balance percentages.
+6. Flag gaps where a file is listed but implementation details are thin.

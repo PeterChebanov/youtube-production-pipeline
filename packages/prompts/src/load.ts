@@ -18,14 +18,18 @@ export interface PromptContext {
   video?: Record<string, unknown>;
   /** Creator-provided planning doc (roadmap, block outline, prep notes). */
   sourceBrief?: string;
-  /** Markdown table injected when sourceBrief contains `[M:SS–M:SS]` blocks. */
+  /** Episode narration budget markdown (target ± band from target_length_minutes). */
   wordBudgetTable?: string;
   /** Formatted narration blocks table (v2 segmentation) for visual-designer. */
   blocksSummary?: string;
   /** Per-block scene/hold limits table for visual-designer validation hints. */
   planLimitsTable?: string;
-  /** Sum of per-block narration word targets. */
+  /** Target narration words (target_length × WPM). */
   totalNarrationWords?: number;
+  /** Soft floor (target −1 min). */
+  minNarrationWords?: number;
+  /** Soft ceiling (target +2 min). */
+  maxNarrationWords?: number;
   artifacts?: Record<string, string>;
   /** Rolling application context for build-along courses */
   applicationState?: string;

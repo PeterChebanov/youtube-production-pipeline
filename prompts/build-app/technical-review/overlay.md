@@ -12,12 +12,11 @@ Review research for a **YouTube build-along** about a **real application**.
 
 ### Review priorities
 
-1. Does research support the **Demo walkthrough** file order and verification steps?
-2. Is Must Know **implementation-first** (files, imports, types, schema, CLI/HTTP) rather than a generic lecture?
-3. If **Creator technical-review focus** is set — did research cover those areas deeply enough?
-4. Are there invented application details not grounded in the repo binding?
-5. For **practice-first**: flag if theory/ecosystem essays crowd out file-level facts (theory should refresh, not re-teach Prior coverage).
-6. For **theory-first** build-app: still require a clear map from concepts → Demo walkthrough files/demo — reject pure lecture with no implementation spine.
-7. Dedup: topics in Concepts introduced / Prior coverage marked callback-only?
+1. Does research support the walkthrough **file order** and a visible **hero demo** (how results look)?
+2. Is Must Know **implementation-first** rather than a generic lecture?
+3. If **Creator technical-review focus** is set — covered deeply enough?
+4. Invented application details not in the repo binding?
+5. practice-first: flag theory crowding out file-level facts.
+6. Dedup: Prior coverage / Concepts marked callback-only?
 
-Keep action items specific (file paths, missing demo commands, weak mental models).
+Keep action items specific (file paths, missing money-shot demo, weak mental models).
