@@ -136,6 +136,35 @@ program
   );
 
 program
+  .command('course')
+  .description('Build-app course utilities')
+  .addCommand(
+    new Command('codegen')
+      .description('Generate episode-code.json from demo-by-episodes.md')
+      .requiredOption('-f, --file <path>', 'Path to demo-by-episodes.md')
+      .requiredOption('-e, --episode <number>', 'Episode number (e.g. 2 for EP02)', (v) => Number(v))
+      .option('-o, --output <path>', 'Write JSON to file (default: stdout)')
+      .option('--repo-url <url>', 'Optional repo_url field for viewer instructions')
+      .action(
+        async (opts: { file: string; episode: number; output?: string; repoUrl?: string }) => {
+          const { readFile, writeFile } = await import('node:fs/promises');
+          const { generateEpisodeCodeFromMarkdown } = await import('@ecpe/core');
+          const markdown = await readFile(opts.file, 'utf8');
+          const binding = generateEpisodeCodeFromMarkdown(markdown, opts.episode, {
+            repoUrl: opts.repoUrl,
+          });
+          const json = `${JSON.stringify(binding, null, 2)}\n`;
+          if (opts.output) {
+            await writeFile(opts.output, json, 'utf8');
+            console.log(`Wrote ${opts.output}`);
+          } else {
+            process.stdout.write(json);
+          }
+        },
+      ),
+  );
+
+program
   .command('export')
   .description('Export project artifacts')
   .argument('<kind>', 'Export kind (manifest-csv | montage-guide)')

@@ -26,6 +26,11 @@ import {
   saveArtifactAction,
   saveChannelVideoAction,
   updateSettingsAction,
+  updateCourseAppRepoAction,
+  getEpisodeAuthoringAction,
+  saveEpisodeAuthoringAction,
+  generateEpisodeCodeAction,
+  regenerateEpisodeCodeAction,
 } from './handlers';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -122,6 +127,15 @@ ipcMain.handle('course:saveApplicationState', async (_e, root: string, content: 
 ipcMain.handle('course:getPriorCoverage', async (_e, root: string) => getPriorCoverageAction(root));
 ipcMain.handle('course:savePriorCoverage', async (_e, root: string, content: string) =>
   savePriorCoverageAction(root, content),
+);
+ipcMain.handle('course:updateAppRepo', async (_e, input) => updateCourseAppRepoAction(input));
+ipcMain.handle('episode:getAuthoring', async (_e, root: string) => getEpisodeAuthoringAction(root));
+ipcMain.handle('episode:saveAuthoring', async (_e, root: string, input) =>
+  saveEpisodeAuthoringAction(root, input),
+);
+ipcMain.handle('episode:generateCode', async (_e, input) => generateEpisodeCodeAction(input));
+ipcMain.handle('episode:regenerateCode', async (_e, root: string) =>
+  regenerateEpisodeCodeAction(root),
 );
 ipcMain.handle('project:info', async (_e, root: string) => getProjectInfoAction(root));
 

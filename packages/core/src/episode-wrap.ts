@@ -16,6 +16,7 @@ import {
   getCourseInfo,
   openCourse,
   readApplicationState,
+  readPriorCoverage,
   resolveCourseRootFromEpisode,
 } from './course.js';
 import { openProject, readArtifact, writeArtifact } from './project.js';
@@ -172,6 +173,8 @@ export async function runEpisodeWrap(options: RunEpisodeWrapOptions): Promise<Ru
       [ARTIFACTS.finalScript]: finalScript,
     },
     revisionNotes: options.revisionNotes,
+    buildsApplication: courseInfo.course.builds_application,
+    priorCoverage: (await readPriorCoverage(courseRoot)) ?? undefined,
   };
 
   if (await fileExists(projectPath, ARTIFACTS.productionPlan)) {

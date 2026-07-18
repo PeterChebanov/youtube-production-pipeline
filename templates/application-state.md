@@ -26,7 +26,7 @@ _(backlog — updated automatically after each episode via episode-wrap)_
 
 ## Concepts introduced
 
-_(Specific subtopics / APIs / patterns first explained per episode — e.g. "LangChain text splitters + pgvector (EP01)", not just "LangChain". Same tool may recur; do not repeat the **same** subtopic narrative; **do** explain new functions when first used. Updated via episode-wrap.)_
+_(Specific subtopics / APIs / patterns **and short theory refreshes** first explained per episode — e.g. "LangChain text splitters + pgvector (EP01)", "fixed-size chunking overlap as boundary preservation (EP02)". Same tool may recur; do not repeat the **same** subtopic narrative; **do** explain new functions when first used. Updated via episode-wrap.)_
 
 ## Decisions
 

@@ -1,0 +1,18 @@
+---
+description: After visual/renderer fixes, re-render affected scenes automatically
+alwaysApply: true
+---
+
+# Re-render after visual fixes
+
+When the user reports visual issues with specific rendered assets (motion, mermaid, excalidraw, code, etc.) and you change renderer code, CSS, or templates:
+
+1. **Re-render affected scenes yourself** — do not ask the user to run CLI commands.
+2. Use the episode path the user gave (or from open project context). Pass it via `-p`; never `cd` into the episode folder.
+3. Run from repo root: `/Users/petrchebanov/video-production-pipeline`
+4. Build changed packages first (`production-engine`, `core`, `cli` if needed).
+5. Re-render only the scenes the user named (or clearly implied), e.g.:
+   `pnpm ecpe run render-scene -p "$EP02" --scene scene-001-b`
+6. Confirm output paths in the response so the user can open the MP4/PNG directly.
+
+Do not hand off render steps to the user unless Playwright/browsers are missing on their machine and your render attempt failed after trying `pnpm exec playwright install chromium`.

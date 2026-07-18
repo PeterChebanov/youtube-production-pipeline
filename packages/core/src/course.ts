@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, access, cp, readdir } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, access, cp, readdir, rm } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,9 +19,16 @@ import { createProject, openProject, slugify, writeArtifact, type ProjectPaths }
 import { syncVideoYamlFromRoadmap } from './roadmap-meta.js';
 import {
   assertEpisodeBuildAppReady,
+  checkAppRepoPath,
   resolveBuildAppEpisodeContext,
   writeEpisodeCodeBinding,
+  type AppRepoPathStatus,
 } from './build-app.js';
+import { writeEpisodeAuthoring } from './episode-authoring.js';
+import {
+  generateEpisodeCodeBindingForEpisode,
+  assertGitCheckpointInRepo,
+} from './episode-code-gen.js';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
@@ -46,6 +53,8 @@ export interface CourseInfo {
   episodes: CourseEpisodeSummary[];
   hasApplicationState: boolean;
   hasPriorCoverage: boolean;
+  /** Build-app: local repo path status (does not mutate course on failure). */
+  appRepo?: AppRepoPathStatus;
 }
 
 export interface CourseEpisodeSummary extends CourseEpisodeEntry {
@@ -63,6 +72,10 @@ export interface CreateCourseOptions {
   description?: string;
   type?: Course['type'];
   builds_application?: boolean;
+  /** Required when builds_application — local path to application repo on this machine. */
+  app_repo_path?: string;
+  /** Optional GitHub (or other) URL for viewer-facing instructions. */
+  app_repo_url?: string;
   /** If set, creates ep01 with this plan as source-brief */
   firstEpisodeBrief?: string;
   firstEpisodeTitle?: string;
@@ -78,6 +91,11 @@ export interface CreateEpisodeOptions {
   episodeNumber?: number;
   /** JSON for episode-code.json — required in build-app courses */
   episodeCode?: string;
+  demoWalkthroughMd?: string;
+  researchFocus?: string;
+  reviewFocus?: string;
+  /** Written to episode video.yaml; falls back to course.default_narrative_balance then theory-first */
+  narrativeBalance?: 'theory-first' | 'balanced' | 'practice-first';
 }
 
 async function exists(filePath: string): Promise<boolean> {
@@ -202,7 +220,25 @@ export async function createCourse(
     type: options.type ?? 'build-along',
     description: options.description?.trim() ?? '',
     builds_application: options.builds_application ?? false,
+    app_repo_path: options.builds_application ? options.app_repo_path?.trim() ?? '' : '',
+    app_repo_url: options.app_repo_url?.trim() ?? '',
   });
+
+  if (course.builds_application) {
+    if (!course.app_repo_path) {
+      throw new Error(
+        'Build-app course requires app_repo_path: the absolute local path to your application repository on this machine.',
+      );
+    }
+    const repoStatus = await checkAppRepoPath(course.app_repo_path);
+    if (!repoStatus.accessible) {
+      throw new Error(
+        `Cannot create build-app course: application repository path is not reachable.\n` +
+          `Path: ${course.app_repo_path}\n${repoStatus.message ?? ''}`,
+      );
+    }
+    course.app_repo_path = repoStatus.configuredPath;
+  }
   await writeFile(paths.courseYaml, stringifyYaml(course), 'utf8');
 
   const state: CourseState = {
@@ -281,6 +317,8 @@ export async function createEpisode(
   video.course_id = state.slug;
   video.course_root = coursePaths.root;
   video.episode = episodeNumber;
+  video.narrative_balance =
+    options.narrativeBalance ?? course.default_narrative_balance ?? 'theory-first';
   await writeFile(paths.videoYaml, stringifyYaml(video), 'utf8');
 
   if (options.sourceBrief?.trim()) {
@@ -289,12 +327,58 @@ export async function createEpisode(
   }
 
   if (course.builds_application) {
-    if (!options.episodeCode?.trim()) {
-      throw new Error(
-        `Build-app course: ${ARTIFACTS.episodeCode} is required when creating an episode. Paste the JSON binding for this episode.`,
-      );
+    try {
+      let episodeCodeJson = options.episodeCode?.trim();
+
+      if (!episodeCodeJson) {
+        if (!options.demoWalkthroughMd?.trim()) {
+          throw new Error(
+            `Build-app episode requires demo walkthrough: paste the ## EP${String(episodeNumber).padStart(2, '0')} — … section from demo-by-episodes.md. ` +
+              `episode-code.json will be generated automatically.`,
+          );
+        }
+        const binding = await generateEpisodeCodeBindingForEpisode({
+          demoWalkthroughMd: options.demoWalkthroughMd.trim(),
+          episodeNumber,
+          repoUrl: course.app_repo_url,
+          courseRoot: coursePaths.root,
+          appRepoPath: course.app_repo_path,
+          fallbackTitle: options.title.trim(),
+        });
+        episodeCodeJson = JSON.stringify(binding, null, 2);
+      }
+
+      if (course.app_repo_path?.trim() && episodeCodeJson) {
+        const checkpoint = JSON.parse(episodeCodeJson).git_checkpoint as string | undefined;
+        if (checkpoint) {
+          await assertGitCheckpointInRepo(course.app_repo_path.trim(), checkpoint);
+        }
+      }
+
+      await writeEpisodeCodeBinding(paths.root, episodeCodeJson);
+
+      const hasAuthoring =
+        options.demoWalkthroughMd?.trim() ||
+        options.researchFocus?.trim() ||
+        options.reviewFocus?.trim();
+
+      if (hasAuthoring) {
+        await writeEpisodeAuthoring(paths.root, {
+          demo_walkthrough_md: options.demoWalkthroughMd?.trim() ?? '',
+          research_focus: options.researchFocus?.trim() ?? '',
+          review_focus: options.reviewFocus?.trim() ?? '',
+        });
+      } else {
+        await cp(
+          path.join(REPO_ROOT, 'templates', ARTIFACTS.episodeAuthoring),
+          path.join(paths.root, ARTIFACTS.episodeAuthoring),
+        );
+      }
+    } catch (err) {
+      // Avoid orphan episode folders that block retry ("folder already exists").
+      await rm(paths.root, { recursive: true, force: true }).catch(() => undefined);
+      throw err;
     }
-    await writeEpisodeCodeBinding(paths.root, options.episodeCode.trim());
   }
 
   const entry: CourseEpisodeEntry = {
@@ -339,12 +423,17 @@ export async function getCourseInfo(courseRoot: string): Promise<CourseInfo> {
     episodes,
     hasApplicationState: await exists(paths.applicationStateFile),
     hasPriorCoverage: await exists(paths.priorCoverageFile),
+    appRepo: course.builds_application
+      ? await checkAppRepoPath(course.app_repo_path)
+      : undefined,
   };
 }
 
 /** Scan episodes/ for folders not yet in course-state (recovery after manual copy). */
 export async function syncCourseEpisodeRegistry(courseRoot: string): Promise<CourseInfo> {
   const paths = await openCourse(courseRoot);
+  const courseRaw = await readFile(paths.courseYaml, 'utf8');
+  const course = parseYamlFile(courseRaw, CourseSchema);
   const state = await readCourseState(paths);
   const known = new Set(state.episodes.map((e) => e.folder));
 
@@ -357,6 +446,11 @@ export async function syncCourseEpisodeRegistry(courseRoot: string): Promise<Cou
       if (known.has(folder)) continue;
       const epRoot = path.join(paths.episodesDir, folder);
       if (!(await exists(path.join(epRoot, ARTIFACTS.channel)))) continue;
+      // Failed createEpisode can leave an orphan folder; do not promote incomplete
+      // build-app episodes into course-state (Research would then fail on missing episode-code).
+      if (course.builds_application && !(await exists(path.join(epRoot, ARTIFACTS.episodeCode)))) {
+        continue;
+      }
       const m = folder.match(/^ep(\d+)-(.+)$/);
       const episode = m ? Number(m[1]) : entries.length + 1;
       let title = folder;
@@ -432,6 +526,7 @@ export async function readCourseContextForEpisode(episodeRoot: string): Promise<
   episodeCodeAppendix?: string;
   courseRoot?: string;
   appRepoPath?: string;
+  appRepoUrl?: string;
 }> {
   const courseRoot = await resolveCourseRootFromEpisode(episodeRoot);
   if (!courseRoot) return {};
@@ -449,6 +544,8 @@ export async function readCourseContextForEpisode(episodeRoot: string): Promise<
     episodeRoot,
     info.course.builds_application,
     video.episode,
+    info.course.app_repo_path,
+    info.course.app_repo_url,
   );
 
   return {
@@ -459,7 +556,8 @@ export async function readCourseContextForEpisode(episodeRoot: string): Promise<
     buildsApplication: buildCtx.buildsApplication,
     episodeCodeAppendix: buildCtx.episodeCodeAppendix,
     courseRoot,
-    appRepoPath: buildCtx.episodeBinding?.repo_path,
+    appRepoPath: buildCtx.appRepoPath,
+    appRepoUrl: info.course.app_repo_url,
   };
 }
 
@@ -471,7 +569,42 @@ export async function assertEpisodeBuildAppGate(episodeProjectPath: string): Pro
   const courseRaw = await readFile(coursePaths.courseYaml, 'utf8');
   const course = parseYamlFile(courseRaw, CourseSchema);
   if (!course.builds_application) return;
-  await assertEpisodeBuildAppReady(episodeProjectPath, true);
+  await assertEpisodeBuildAppReady(episodeProjectPath, true, course.app_repo_path);
+}
+
+/** Update course-level application repo path (e.g. after moving the folder). Does not touch episodes. */
+export async function updateCourseAppRepo(
+  courseRoot: string,
+  appRepoPath: string,
+  appRepoUrl?: string,
+): Promise<Course> {
+  const paths = await openCourse(courseRoot);
+  const courseRaw = await readFile(paths.courseYaml, 'utf8');
+  const course = parseYamlFile(courseRaw, CourseSchema);
+
+  if (!course.builds_application) {
+    throw new Error('This course is not a build-app course.');
+  }
+
+  const trimmedPath = appRepoPath.trim();
+  if (!trimmedPath) {
+    throw new Error('app_repo_path cannot be empty for a build-app course.');
+  }
+
+  const repoStatus = await checkAppRepoPath(trimmedPath);
+  if (!repoStatus.accessible) {
+    throw new Error(
+      `Application repository path is not reachable.\nPath: ${trimmedPath}\n${repoStatus.message ?? ''}`,
+    );
+  }
+
+  course.app_repo_path = repoStatus.configuredPath;
+  if (appRepoUrl !== undefined) {
+    course.app_repo_url = appRepoUrl.trim();
+  }
+
+  await writeFile(paths.courseYaml, stringifyYaml(course), 'utf8');
+  return course;
 }
 
 export async function createSingleVideo(

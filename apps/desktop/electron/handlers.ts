@@ -11,12 +11,15 @@ import {
   defaultSinglesRoot,
   exportEditManifestCsv,
   exportMontageGuide,
+  generateEpisodeCodeBindingForEpisode,
+  regenerateEpisodeCodeJson,
   getCourseInfo,
   getProjectInfo,
   openCourse,
   openProject,
   previewMotionPlan,
   readApplicationState,
+  readEpisodeAuthoring,
   readPriorCoverage,
   readArtifact,
   reportProgress,
@@ -27,7 +30,9 @@ import {
   setProgressReporter,
   syncCourseEpisodeRegistry,
   syncVideoYamlFromRoadmap,
+  updateCourseAppRepo,
   writeArtifact,
+  writeEpisodeAuthoring,
   type RunStageOptions,
 } from '@ecpe/core';
 import { checkAnthropic, checkOpenAI, DEFAULT_LLM_PROVIDER, getLlmConfig, loadEnv } from '@ecpe/llm';
@@ -145,38 +150,34 @@ export async function createProjectAction(input: {
 }
 
 export async function createCourseAction(input: {
-  name?: string;
+  name: string;
   parentDir?: string;
-  topic?: string;
-  sourceBrief?: string;
-  episodeCode?: string;
   description?: string;
-  type?: 'build-along' | 'theory';
   builds_application?: boolean;
-}): Promise<{ courseRoot: string; firstEpisodeRoot?: string }> {
-  if (!input.name?.trim() && !input.sourceBrief?.trim()) {
-    throw new Error('Provide a course name or a narrative for the first episode.');
+  app_repo_path?: string;
+  app_repo_url?: string;
+}): Promise<{ courseRoot: string }> {
+  if (!input.name?.trim()) {
+    throw new Error('Enter a course name.');
   }
 
   const settings = await loadSettings();
   const parentDir = input.parentDir?.trim() || settings.defaultCoursesRoot;
-  const courseName = input.name?.trim() || deriveProjectName(input);
+  const courseName = input.name.trim();
   await ensureDir(parentDir);
 
-  const { paths, firstEpisodeRoot } = await createCourse(parentDir, {
+  const buildsApp = input.builds_application ?? false;
+  const { paths } = await createCourse(parentDir, {
     name: courseName,
     description: input.description,
-    type: input.type ?? 'build-along',
-    builds_application: input.builds_application ?? false,
-    firstEpisodeBrief: input.sourceBrief?.trim(),
-    firstEpisodeTitle: input.name?.trim() || courseName,
-    firstEpisodeTopic: input.topic?.trim(),
-    firstEpisodeCode: input.episodeCode?.trim(),
+    type: buildsApp ? 'build-along' : 'theory',
+    builds_application: buildsApp,
+    app_repo_path: input.app_repo_path?.trim(),
+    app_repo_url: input.app_repo_url?.trim(),
   });
 
   await touchRecentCourse(paths.root);
-  if (firstEpisodeRoot) await touchRecent(firstEpisodeRoot);
-  return { courseRoot: paths.root, firstEpisodeRoot };
+  return { courseRoot: paths.root };
 }
 
 export async function loadCourseAction(courseRoot: string) {
@@ -197,12 +198,20 @@ export async function createEpisodeAction(input: {
   topic?: string;
   sourceBrief?: string;
   episodeCode?: string;
+  demoWalkthroughMd?: string;
+  researchFocus?: string;
+  reviewFocus?: string;
+  narrativeBalance?: 'theory-first' | 'balanced' | 'practice-first';
 }): Promise<{ root: string }> {
   const paths = await createEpisode(input.courseRoot, {
     title: input.title.trim(),
     topic: input.topic?.trim(),
     sourceBrief: input.sourceBrief?.trim(),
     episodeCode: input.episodeCode?.trim(),
+    demoWalkthroughMd: input.demoWalkthroughMd?.trim(),
+    researchFocus: input.researchFocus?.trim(),
+    reviewFocus: input.reviewFocus?.trim(),
+    narrativeBalance: input.narrativeBalance,
   });
   await touchRecent(paths.root);
   await touchRecentCourse(input.courseRoot);
@@ -229,6 +238,80 @@ export async function savePriorCoverageAction(courseRoot: string, content: strin
   await openCourse(courseRoot);
   await writeArtifact(courseRoot, 'prior-coverage.md', content);
   return { ok: true };
+}
+
+export async function updateCourseAppRepoAction(input: {
+  courseRoot: string;
+  appRepoPath: string;
+  appRepoUrl?: string;
+}) {
+  await updateCourseAppRepo(input.courseRoot, input.appRepoPath.trim(), input.appRepoUrl?.trim());
+  return syncCourseEpisodeRegistry(input.courseRoot);
+}
+
+export async function getEpisodeAuthoringAction(projectRoot: string) {
+  const authoring = await readEpisodeAuthoring(projectRoot);
+  return {
+    demo_walkthrough_md: authoring?.demo_walkthrough_md ?? '',
+    research_focus: authoring?.research_focus ?? '',
+    review_focus: authoring?.review_focus ?? '',
+  };
+}
+
+export async function saveEpisodeAuthoringAction(
+  projectRoot: string,
+  input: { demoWalkthroughMd?: string; researchFocus?: string; reviewFocus?: string },
+) {
+  await writeEpisodeAuthoring(projectRoot, {
+    demo_walkthrough_md: input.demoWalkthroughMd?.trim() ?? '',
+    research_focus: input.researchFocus?.trim() ?? '',
+    review_focus: input.reviewFocus?.trim() ?? '',
+  });
+
+  let episodeCode: { git_checkpoint: string; cumulative_scope: string[] } | undefined;
+  if (input.demoWalkthroughMd?.trim()) {
+    try {
+      const binding = await regenerateEpisodeCodeJson(projectRoot, {
+        demoWalkthroughMd: input.demoWalkthroughMd.trim(),
+      });
+      episodeCode = {
+        git_checkpoint: binding.git_checkpoint,
+        cumulative_scope: binding.cumulative_scope ?? [],
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: true, episodeCodeError: message };
+    }
+  }
+
+  return { ok: true, episodeCode };
+}
+
+export async function regenerateEpisodeCodeAction(projectRoot: string) {
+  const binding = await regenerateEpisodeCodeJson(projectRoot);
+  return {
+    json: JSON.stringify(binding, null, 2),
+    git_checkpoint: binding.git_checkpoint,
+    cumulative_scope: binding.cumulative_scope ?? [],
+  };
+}
+
+export async function generateEpisodeCodeAction(input: {
+  demoMarkdown: string;
+  episodeNumber: number;
+  repoUrl?: string;
+  courseRoot?: string;
+  appRepoPath?: string;
+}) {
+  const binding = await generateEpisodeCodeBindingForEpisode({
+    demoWalkthroughMd: input.demoMarkdown,
+    episodeNumber: input.episodeNumber,
+    repoUrl: input.repoUrl?.trim(),
+    courseRoot: input.courseRoot?.trim(),
+    appRepoPath: input.appRepoPath?.trim(),
+    validateGit: Boolean(input.appRepoPath?.trim()),
+  });
+  return { json: JSON.stringify(binding, null, 2) };
 }
 
 export async function getProjectInfoAction(projectRoot: string) {

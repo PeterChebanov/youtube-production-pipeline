@@ -5,6 +5,7 @@
 
   type View = 'home' | 'create' | 'course' | 'project' | 'montage' | 'settings';
   type CreateMode = 'course' | 'single';
+  type NarrativeBalance = 'theory-first' | 'balanced' | 'practice-first';
 
   let view: View = $state('home');
   let createMode: CreateMode = $state('single');
@@ -20,8 +21,16 @@
   let newEpisodeTitle = $state('');
   let newEpisodeTopic = $state('');
   let newEpisodeBrief = $state('');
-  let newEpisodeCode = $state('');
-  let newFirstEpisodeCode = $state('');
+  let newEpisodeDemoWalkthrough = $state('');
+  let newEpisodeResearchFocus = $state('');
+  let newEpisodeReviewFocus = $state('');
+  let newEpisodeNarrativeBalance = $state<NarrativeBalance>('theory-first');
+  let demoWalkthroughMd = $state('');
+  let courseAppRepoPath = $state('');
+  let researchFocusMd = $state('');
+  let reviewFocusMd = $state('');
+  let episodeCodeSummary = $state('');
+  let authoringDirty = $state(false);
   let logs = $state<string[]>([]);
   let busy = $state(false);
   let revision = $state('');
@@ -31,14 +40,16 @@
   let newName = $state('');
   let newTopic = $state('');
   let newDescription = $state('');
-  let newCourseType = $state<'build-along' | 'theory'>('build-along');
-  let newBuildsApplication = $state(false);
+  let newCourseKind = $state<'build-app' | 'theory'>('build-app');
+  let newAppRepoPath = $state('');
+  let newAppRepoUrl = $state('');
   let newSourceBrief = $state('');
+  let courseAppRepoUrl = $state('');
+  let courseAppRepoDirty = $state(false);
   let targetFolder = $state('');
 
   let channelYaml = $state('');
   let videoYaml = $state('');
-  type NarrativeBalance = 'theory-first' | 'balanced' | 'practice-first';
   let narrativeBalance = $state<NarrativeBalance>('theory-first');
   let theoryBoost = $state('');
   let practiceBoost = $state('');
@@ -72,16 +83,17 @@
   const DEFAULT_SINGLES_FOLDER = '~/Desktop/ECPE/singles';
 
   let canCreate = $derived.by(() => {
-    if (!newSourceBrief.trim() && !newName.trim()) return false;
-    if (createMode === 'course' && newBuildsApplication && newSourceBrief.trim() && !newFirstEpisodeCode.trim()) {
-      return false;
+    if (createMode === 'course') {
+      if (!newName.trim()) return false;
+      if (newCourseKind === 'build-app' && !newAppRepoPath.trim()) return false;
+      return true;
     }
-    return true;
+    return Boolean(newSourceBrief.trim() || newName.trim());
   });
 
   let canCreateEpisode = $derived.by(() => {
     if (!newEpisodeTitle.trim()) return false;
-    if (courseInfo?.course.builds_application && !newEpisodeCode.trim()) return false;
+    if (courseInfo?.course.builds_application && !newEpisodeDemoWalkthrough.trim()) return false;
     return true;
   });
 
@@ -247,7 +259,9 @@
     newTopic = '';
     newDescription = '';
     newSourceBrief = '';
-    newCourseType = 'build-along';
+    newCourseKind = 'build-app';
+    newAppRepoPath = '';
+    newAppRepoUrl = '';
     if (settings) {
       targetFolder = mode === 'course' ? settings.defaultCoursesRoot : settings.defaultSinglesRoot;
     }
@@ -262,6 +276,10 @@
     try {
       courseRoot = root;
       courseInfo = await window.ecpe.loadCourse(root);
+      courseAppRepoPath = courseInfo.course.app_repo_path ?? '';
+      courseAppRepoUrl = courseInfo.course.app_repo_url ?? '';
+      courseAppRepoDirty = false;
+      syncNewEpisodeNarrativeDefault(courseInfo);
       const appState = await window.ecpe.getApplicationState(root);
       applicationState = appState.content;
       applicationStateDirty = false;
@@ -280,9 +298,62 @@
     }
   }
 
+  function syncNewEpisodeNarrativeDefault(info: CourseInfo | null) {
+    const fromCourse = info?.course.default_narrative_balance;
+    if (fromCourse && ['theory-first', 'balanced', 'practice-first'].includes(fromCourse)) {
+      newEpisodeNarrativeBalance = fromCourse;
+      return;
+    }
+    // Build-app episodes default to practice-first unless course overrides
+    newEpisodeNarrativeBalance = info?.course.builds_application ? 'practice-first' : 'theory-first';
+  }
+
   async function refreshCourseInfo() {
     if (!courseRoot || !window.ecpe) return;
     courseInfo = await window.ecpe.getCourseInfo(courseRoot);
+    courseAppRepoPath = courseInfo.course.app_repo_path ?? '';
+    courseAppRepoUrl = courseInfo.course.app_repo_url ?? '';
+    courseAppRepoDirty = false;
+    syncNewEpisodeNarrativeDefault(courseInfo);
+  }
+
+  async function pickAppRepoFolder(forCreate: boolean) {
+    if (!window.ecpe) return;
+    clearError();
+    try {
+      const start = forCreate ? newAppRepoPath || undefined : courseAppRepoPath || undefined;
+      const picked = await window.ecpe.pickDirectory(start);
+      if (!picked) return;
+      if (forCreate) {
+        newAppRepoPath = picked;
+      } else {
+        courseAppRepoPath = picked;
+        courseAppRepoDirty = true;
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function saveCourseAppRepo() {
+    if (!courseRoot || !window.ecpe || !courseAppRepoPath.trim()) return;
+    busy = true;
+    clearError();
+    try {
+      courseInfo = await window.ecpe.updateCourseAppRepo({
+        courseRoot,
+        appRepoPath: courseAppRepoPath.trim(),
+        appRepoUrl: courseAppRepoUrl.trim() || undefined,
+      });
+      courseAppRepoPath = courseInfo.course.app_repo_path ?? '';
+      courseAppRepoUrl = courseInfo.course.app_repo_url ?? '';
+      courseAppRepoDirty = false;
+      log('Updated application repository path for course');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      busy = false;
+    }
   }
 
   async function pickCourseFolder() {
@@ -338,12 +409,18 @@
         title: newEpisodeTitle.trim(),
         topic: newEpisodeTopic.trim() || undefined,
         sourceBrief: newEpisodeBrief.trim() || undefined,
-        episodeCode: newEpisodeCode.trim() || undefined,
+        demoWalkthroughMd: newEpisodeDemoWalkthrough.trim() || undefined,
+        researchFocus: newEpisodeResearchFocus.trim() || undefined,
+        reviewFocus: newEpisodeReviewFocus.trim() || undefined,
+        narrativeBalance: newEpisodeNarrativeBalance,
       });
       newEpisodeTitle = '';
       newEpisodeTopic = '';
       newEpisodeBrief = '';
-      newEpisodeCode = '';
+      newEpisodeDemoWalkthrough = '';
+      newEpisodeResearchFocus = '';
+      newEpisodeReviewFocus = '';
+      syncNewEpisodeNarrativeDefault(courseInfo);
       await refreshCourseInfo();
       await openProject(root);
       log(`Created episode: ${root}`);
@@ -360,7 +437,90 @@
     return 'Planned';
   }
 
-  async function importTextFile(target: 'new' | 'project' | 'firstEpisodeCode' | 'episodeCode') {
+  async function saveEpisodeAuthoring() {
+    if (!projectRoot || !window.ecpe) return;
+    busy = true;
+    clearError();
+    try {
+      const result = await window.ecpe.saveEpisodeAuthoring(projectRoot, {
+        demoWalkthroughMd: demoWalkthroughMd.trim(),
+        researchFocus: researchFocusMd.trim(),
+        reviewFocus: reviewFocusMd.trim(),
+      });
+      authoringDirty = false;
+      if (result.episodeCode) {
+        episodeCodeSummary =
+          `episode-code.json updated · git: ${result.episodeCode.git_checkpoint} · ` +
+          `${result.episodeCode.cumulative_scope.length} files in cumulative_scope`;
+        log(episodeCodeSummary);
+      } else if (result.episodeCodeError) {
+        episodeCodeSummary = `Authoring saved; episode-code not updated: ${result.episodeCodeError}`;
+        setError(result.episodeCodeError);
+      } else {
+        log('Saved episode-authoring.yaml');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function regenerateEpisodeCode() {
+    if (!projectRoot || !window.ecpe) return;
+    busy = true;
+    clearError();
+    try {
+      const result = await window.ecpe.regenerateEpisodeCode(projectRoot);
+      episodeCodeSummary =
+        `episode-code.json regenerated · git: ${result.git_checkpoint} · ` +
+        `${result.cumulative_scope.length} files in cumulative_scope`;
+      log(episodeCodeSummary);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function importDemoByEpisodes(target: 'create' | 'project') {
+    if (!window.ecpe) return;
+    clearError();
+    try {
+      const file = await window.ecpe.pickTextFile();
+      if (!file) return;
+
+      const epNum =
+        target === 'project'
+          ? Number(projectInfo?.video?.episode ?? 1)
+          : (courseInfo?.episodes?.length ?? 0) + 1;
+
+      const sectionMatch = file.content.match(
+        new RegExp(`##\\s*EP0*${epNum}(?:\\s*[—–-]|\\s+)[\\s\\S]*?(?=\\n##\\s*EP\\d|$)`, 'i'),
+      );
+      const section = sectionMatch?.[0] ?? file.content;
+
+      if (!sectionMatch) {
+        log(
+          `Warning: no ## EP${String(epNum).padStart(2, '0')} heading found — pasted full file. ` +
+            `Prefer the matching ## EP section.`,
+        );
+      }
+
+      if (target === 'project') {
+        demoWalkthroughMd = section.trim();
+        authoringDirty = true;
+      } else {
+        newEpisodeDemoWalkthrough = section.trim();
+      }
+
+      log(`Imported demo-by-episodes section for EP${String(epNum).padStart(2, '0')}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function importTextFile(target: 'new' | 'project' | 'demoWalkthrough' | 'createDemo' | 'episodeBrief') {
     if (!window.ecpe) return;
     clearError();
     try {
@@ -368,10 +528,14 @@
       if (!file) return;
       if (target === 'new') {
         newSourceBrief = file.content;
-      } else if (target === 'firstEpisodeCode') {
-        newFirstEpisodeCode = file.content;
-      } else if (target === 'episodeCode') {
-        newEpisodeCode = file.content;
+      } else if (target === 'episodeBrief') {
+        newEpisodeBrief = file.content;
+      } else if (target === 'demoWalkthrough') {
+        demoWalkthroughMd = file.content;
+        authoringDirty = true;
+      } else if (target === 'createDemo') {
+        await importDemoByEpisodes('create');
+        return;
       } else {
         sourceBrief = file.content;
       }
@@ -463,6 +627,14 @@
         }
       }
 
+      if (courseInfo?.course.builds_application) {
+        const authoring = await window.ecpe.getEpisodeAuthoring(root);
+        demoWalkthroughMd = authoring.demo_walkthrough_md;
+        researchFocusMd = authoring.research_focus;
+        reviewFocusMd = authoring.review_focus;
+        authoringDirty = false;
+      }
+
       view = 'project';
       log(`Opened project: ${root}`);
     } catch (err) {
@@ -509,6 +681,12 @@
     clearError();
     log(`Running: ${stageId}…`);
     try {
+      if (narrativeDirty) {
+        applyNarrativeToVideoYaml();
+        await window.ecpe.saveChannelVideo(projectRoot, channelYaml, videoYaml);
+        narrativeDirty = false;
+        log('Auto-saved narrative_balance before pipeline run');
+      }
       const result = await window.ecpe.runPipeline(stageId, {
         projectPath: projectRoot,
         revisionNotes: revision || undefined,
@@ -553,7 +731,11 @@
       );
       return;
     }
-    if (!newSourceBrief.trim() && !newName.trim()) {
+    if (createMode === 'course' && !newName.trim()) {
+      setError('Enter a course name.');
+      return;
+    }
+    if (createMode === 'single' && !newSourceBrief.trim() && !newName.trim()) {
       setError('Paste a creator roadmap or enter a project label.');
       return;
     }
@@ -562,18 +744,16 @@
     log(createMode === 'course' ? 'Creating course…' : 'Creating single video…');
     try {
       if (createMode === 'course') {
-        const { courseRoot: created, firstEpisodeRoot } = await window.ecpe.createCourse({
-          name: newName.trim() || undefined,
-          topic: newTopic.trim() || undefined,
+        const buildsApp = newCourseKind === 'build-app';
+        const { courseRoot: created } = await window.ecpe.createCourse({
+          name: newName.trim(),
           parentDir: targetFolder || undefined,
-          sourceBrief: newSourceBrief.trim() || undefined,
           description: newDescription.trim() || undefined,
-          type: newCourseType,
-          builds_application: newBuildsApplication,
-          episodeCode: newFirstEpisodeCode.trim() || undefined,
+          builds_application: buildsApp,
+          app_repo_path: buildsApp ? newAppRepoPath.trim() : undefined,
+          app_repo_url: buildsApp ? newAppRepoUrl.trim() || undefined : undefined,
         });
         await openCourse(created);
-        if (firstEpisodeRoot) await openProject(firstEpisodeRoot);
       } else {
         const { root } = await window.ecpe.createProject({
           name: newName.trim() || undefined,
@@ -822,7 +1002,7 @@
         <h2>{createMode === 'course' ? 'New course' : 'New single video'}</h2>
         <p class="muted">
           {#if createMode === 'course'}
-            Creates a course folder with channel context and optional first episode from your narrative.
+            Course folder with channel context. Episodes are added after creation.
           {:else}
             Creates a standalone video folder — same pipeline as before.
           {/if}
@@ -830,11 +1010,15 @@
 
         <label>
           {createMode === 'course' ? 'Course name' : 'Project label'}
-          <span class="muted">(optional if roadmap is provided)</span>
+          {#if createMode === 'course'}
+            <span class="muted">(required)</span>
+          {:else}
+            <span class="muted">(optional if roadmap is provided)</span>
+          {/if}
           <input
             bind:value={newName}
             placeholder={createMode === 'course'
-              ? 'e.g. Build a SaaS with Next.js'
+              ? 'e.g. AI Support Copilot'
               : 'Folder name — or leave empty if roadmap is provided'}
           />
         </label>
@@ -846,77 +1030,61 @@
           </label>
           <label>
             Course type
-            <select bind:value={newCourseType}>
-              <option value="build-along">Build-along</option>
-              <option value="theory">Theory</option>
+            <select bind:value={newCourseKind}>
+              <option value="build-app">Build App — walkthrough of a real repository</option>
+              <option value="theory">Theory course — narrative only, no code binding</option>
             </select>
           </label>
-          <label class="checkbox-row">
-            <input type="checkbox" bind:checked={newBuildsApplication} />
-            Build-app course — each episode needs <code>episode-code.json</code> (repo binding for that video)
-          </label>
+          {#if newCourseKind === 'build-app'}
+            <div class="brief-section">
+              <div class="brief-header">
+                <div>
+                  <div class="field-label">
+                    Application repository (local path) <span class="muted">(required)</span>
+                  </div>
+                  <p class="muted">
+                    Absolute path to your built app. Stored in <code>course.yaml</code> — editable later in
+                    course settings.
+                  </p>
+                </div>
+                <button
+                  class="secondary"
+                  type="button"
+                  onclick={() => pickAppRepoFolder(true)}
+                  disabled={busy}
+                >
+                  Choose folder…
+                </button>
+              </div>
+              <input bind:value={newAppRepoPath} placeholder="/Users/you/projects/my-app" />
+            </div>
+            <label>
+              Repository URL <span class="muted">(optional — for viewer instructions)</span>
+              <input bind:value={newAppRepoUrl} placeholder="https://github.com/you/my-app" />
+            </label>
+          {/if}
         {/if}
 
-        <label>
-          Topic <span class="muted">(optional)</span>
-          <input bind:value={newTopic} placeholder="Episode topic if using a narrative" />
-        </label>
+        {#if createMode === 'single'}
+          <label>
+            Topic <span class="muted">(optional)</span>
+            <input bind:value={newTopic} placeholder="Episode topic if using a narrative" />
+          </label>
 
-        <div class="brief-section">
-          <div class="brief-header">
-            <div>
-              <div class="field-label">
-                {createMode === 'course' ? 'First episode narrative' : 'Creator roadmap'}
-                <span class="muted">(optional)</span>
-              </div>
-              <p class="muted">
-                {#if createMode === 'course'}
-                  If provided, creates ep01 with this as <code>source-brief.md</code> and injects course
-                  <code>application-state.md</code> into every episode pipeline.
-                {:else}
-                  Saved as <code>source-brief.md</code> and sent to every pipeline stage.
-                {/if}
-              </p>
-            </div>
-            <button class="secondary" type="button" onclick={() => importTextFile('new')} disabled={busy}>
-              Import file…
-            </button>
-          </div>
-          <textarea
-            bind:value={newSourceBrief}
-            rows="14"
-            placeholder={createMode === 'course'
-              ? 'Paste ep01 roadmap or full course plan…'
-              : 'Paste your video roadmap here…'}
-          ></textarea>
-        </div>
-
-        {#if createMode === 'course' && newBuildsApplication && newSourceBrief.trim()}
           <div class="brief-section">
             <div class="brief-header">
               <div>
                 <div class="field-label">
-                  Episode code binding <span class="muted">(required for ep01)</span>
+                  Creator roadmap
+                  <span class="muted">(optional)</span>
                 </div>
-                <p class="muted">
-                  JSON for this episode only — repo paths, demo, <code>script_sources</code>. Saved as
-                  <code>episode-code.json</code> in the episode folder.
-                </p>
+                <p class="muted">Saved as <code>source-brief.md</code> and sent to every pipeline stage.</p>
               </div>
-              <button
-                class="secondary"
-                type="button"
-                onclick={() => importTextFile('firstEpisodeCode')}
-                disabled={busy}
-              >
-                Import JSON…
+              <button class="secondary" type="button" onclick={() => importTextFile('new')} disabled={busy}>
+                Import file…
               </button>
             </div>
-            <textarea
-              bind:value={newFirstEpisodeCode}
-              rows="10"
-              placeholder={'{\n  "version": 1,\n  "repo_url": "...",\n  "repo_path": "/path/to/app",\n  "git_checkpoint": "ep01",\n  "script_sources": []\n}'}
-            ></textarea>
+            <textarea bind:value={newSourceBrief} rows="14" placeholder="Paste your video roadmap here…"></textarea>
           </div>
         {/if}
 
@@ -947,16 +1115,13 @@
           <p class="muted">{courseInfo.course.description}</p>
         {/if}
         <p class="muted">
-          Type: {courseInfo.course.type}
-          {#if courseInfo.course.builds_application}
-            · <strong>Build-app</strong> — code binding per episode
-          {/if}
+          Type: {courseInfo.course.builds_application ? 'Build App' : 'Theory'}
           · {courseInfo.episodes.length} episode(s)
         </p>
         {#if courseInfo.course.builds_application}
           <p class="muted">
-            Each episode needs its own <code>episode-code.json</code> when you create it. Pipeline injects only
-            that episode's binding — not the whole course plan.
+            Each episode needs a theoretical roadmap (<code>source-brief.md</code>) and a demo walkthrough
+            section from demo-by-episodes. <code>episode-code.json</code> is generated automatically.
           </p>
         {/if}
         <div class="actions">
@@ -964,6 +1129,53 @@
           <button class="secondary" onclick={refreshCourseInfo} disabled={busy}>Refresh</button>
         </div>
       </div>
+
+      {#if courseInfo.course.builds_application}
+        <div class="card">
+          <h2>Application repository</h2>
+          <p class="muted">
+            Local path to your built app on this machine. All episodes use the same path. If you move the
+            folder, update the path here — completed episodes are not modified.
+          </p>
+          {#if courseInfo.appRepo && !courseInfo.appRepo.accessible}
+            <div class="warning-banner">
+              Repository path is not reachable: {courseInfo.appRepo.configuredPath || '(not set)'}.
+              {courseInfo.appRepo.message ?? ''} Update the path below before running pipeline stages
+              that need source files.
+            </div>
+          {:else if courseInfo.appRepo?.message}
+            <p class="muted">{courseInfo.appRepo.message}</p>
+          {/if}
+          <div class="brief-section">
+            <div class="brief-header">
+              <div>
+                <div class="field-label">Local path</div>
+              </div>
+              <button class="secondary" type="button" onclick={() => pickAppRepoFolder(false)} disabled={busy}>
+                Choose folder…
+              </button>
+            </div>
+            <input
+              bind:value={courseAppRepoPath}
+              oninput={() => (courseAppRepoDirty = true)}
+              placeholder="/Users/you/projects/my-app"
+            />
+          </div>
+          <label>
+            Repository URL <span class="muted">(optional)</span>
+            <input
+              bind:value={courseAppRepoUrl}
+              oninput={() => (courseAppRepoDirty = true)}
+              placeholder="https://github.com/you/my-app"
+            />
+          </label>
+          <div class="actions">
+            <button onclick={saveCourseAppRepo} disabled={busy || !courseAppRepoDirty || !courseAppRepoPath.trim()}>
+              Save repository settings
+            </button>
+          </div>
+        </div>
+      {/if}
 
       <div class="card">
         <h2>Course schema</h2>
@@ -989,13 +1201,13 @@
               </button>
             {/each}
           {:else}
-            <p class="muted">No episodes yet — add one below or create ep01 when starting the course with a narrative.</p>
+            <p class="muted">No episodes yet — create the first episode below.</p>
           {/if}
         </div>
       </div>
 
       <div class="card">
-        <h2>Add episode</h2>
+        <h2>{courseInfo.episodes.length === 0 ? 'Create first episode' : 'Add episode'}</h2>
         <label>
           Title
           <input bind:value={newEpisodeTitle} placeholder="Episode title" />
@@ -1005,30 +1217,92 @@
           <input bind:value={newEpisodeTopic} placeholder="Short topic line" />
         </label>
         <label>
-          Roadmap <span class="muted">(optional)</span>
-          <textarea bind:value={newEpisodeBrief} rows="6" placeholder="source-brief.md for this episode"></textarea>
+          Narrative balance
+          <select bind:value={newEpisodeNarrativeBalance} disabled={busy}>
+            <option value="theory-first">Theory-first — more concepts, still show code</option>
+            <option value="balanced">Balanced — ~50/50</option>
+            <option value="practice-first">Practice-first — walkthrough + short recap</option>
+          </select>
         </label>
+        <p class="muted">
+          Written into this episode's <code>video.yaml</code> on create
+          {#if courseInfo.course.builds_application}
+            (build-app default: practice-first unless course sets <code>default_narrative_balance</code>)
+          {/if}
+          .
+        </p>
+        <div class="brief-section">
+          <div class="brief-header">
+            <div>
+              <div class="field-label">
+                Theoretical narrative
+                {#if courseInfo.course.builds_application}
+                  <span class="muted">(recommended)</span>
+                {:else}
+                  <span class="muted">(optional)</span>
+                {/if}
+              </div>
+              <p class="muted">
+                Your creator roadmap for this episode — timecodes, theory/practice balance, what to teach.
+                Saved as <code>source-brief.md</code>.
+              </p>
+            </div>
+            <button
+              class="secondary"
+              type="button"
+              onclick={() => importTextFile('episodeBrief')}
+              disabled={busy}
+            >
+              Import file…
+            </button>
+          </div>
+          <textarea
+            bind:value={newEpisodeBrief}
+            rows="8"
+            placeholder="Paste the theoretical plan for this episode…"
+          ></textarea>
+        </div>
         {#if courseInfo.course.builds_application}
           <div class="brief-section">
             <div class="brief-header">
               <div>
-                <div class="field-label">Episode code binding <span class="muted">(required)</span></div>
-                <p class="muted">Paste JSON for this episode — saved as <code>episode-code.json</code>.</p>
+                <div class="field-label">Demo walkthrough <span class="muted">(required)</span></div>
+                <p class="muted">
+                  Paste the <code>## EP0N</code> section from demo-by-episodes.md — what was implemented,
+                  file walkthrough, demo commands. Saved as <code>episode-authoring.yaml</code>; generates
+                  <code>episode-code.json</code> for models and B-roll.
+                </p>
               </div>
-              <button class="secondary" type="button" onclick={() => importTextFile('episodeCode')} disabled={busy}>
-                Import JSON…
+              <button class="secondary" type="button" onclick={() => importDemoByEpisodes('create')} disabled={busy}>
+                Import demo-by-episodes…
               </button>
             </div>
             <textarea
-              bind:value={newEpisodeCode}
+              bind:value={newEpisodeDemoWalkthrough}
               rows="10"
-              placeholder={'{\n  "version": 1,\n  "repo_url": "...",\n  "repo_path": "/path/to/app",\n  "git_checkpoint": "ep02",\n  "script_sources": []\n}'}
+              placeholder="## EP01 — … (from demo-by-episodes.md)"
             ></textarea>
           </div>
+          <label>
+            Research focus <span class="muted">(optional)</span>
+            <textarea
+              bind:value={newEpisodeResearchFocus}
+              rows="2"
+              placeholder="e.g. Focus on chunker.py overlap; skip Docker deep-dive"
+            ></textarea>
+          </label>
+          <label>
+            Review focus <span class="muted">(optional)</span>
+            <textarea
+              bind:value={newEpisodeReviewFocus}
+              rows="2"
+              placeholder="e.g. Verify walkthrough order matches implementation steps"
+            ></textarea>
+          </label>
         {/if}
         <div class="actions">
           <button onclick={createEpisode} disabled={!canCreateEpisode || busy}>
-            {busy ? 'Creating…' : 'Create episode'}
+            {busy ? 'Creating…' : courseInfo.episodes.length === 0 ? 'Create first episode' : 'Create episode'}
           </button>
         </div>
       </div>
@@ -1083,11 +1357,71 @@
         <textarea bind:value={sourceBrief} rows="16" placeholder="No roadmap yet — paste or import a planning doc"></textarea>
       </div>
 
+      {#if courseInfo?.course.builds_application}
+        <div class="card">
+          <h2>Episode authoring (build-app)</h2>
+          <p class="muted">
+            Paste one <code>## EP0N</code> section from demo-by-episodes.md. Saving also regenerates
+            <code>episode-code.json</code> (cumulative scope includes prior episodes).
+          </p>
+          {#if episodeCodeSummary}
+            <p class="muted">{episodeCodeSummary}</p>
+          {/if}
+          <div class="actions">
+            <button class="secondary" type="button" onclick={() => importDemoByEpisodes('project')} disabled={busy}>
+              Import demo-by-episodes…
+            </button>
+            <button
+              class="secondary"
+              type="button"
+              onclick={regenerateEpisodeCode}
+              disabled={busy || !demoWalkthroughMd.trim()}
+            >
+              Regenerate episode-code
+            </button>
+            <button onclick={saveEpisodeAuthoring} disabled={!authoringDirty || busy}>
+              Save authoring
+            </button>
+          </div>
+          <label>
+            Demo walkthrough (episode section)
+            <textarea
+              bind:value={demoWalkthroughMd}
+              oninput={() => (authoringDirty = true)}
+              rows="12"
+              placeholder="Paste ## EP02 — … section from demo-by-episodes.md"
+            ></textarea>
+          </label>
+          <label>
+            Research focus <span class="muted">(optional)</span>
+            <textarea
+              bind:value={researchFocusMd}
+              oninput={() => (authoringDirty = true)}
+              rows="3"
+              placeholder="e.g. Concentrate on chunker.py overlap logic; skip Docker deep-dive"
+            ></textarea>
+          </label>
+          <label>
+            Technical review focus <span class="muted">(optional)</span>
+            <textarea
+              bind:value={reviewFocusMd}
+              oninput={() => (authoringDirty = true)}
+              rows="3"
+              placeholder="e.g. Verify file walkthrough order matches implementation steps"
+            ></textarea>
+          </label>
+        </div>
+      {/if}
+
       <div class="card">
         <h2>Narrative balance</h2>
         <p class="muted">
           Controls theory vs practice depth for research and script stages. Topic boosts override specific subjects.
           Prior coverage is set at course level.
+          {#if courseInfo?.course.builds_application}
+            <br />
+            Build-app targets: practice-first ~65–75% code/demo; balanced ~50/50; theory-first ~65% theory / ~35% practice (still not a pure lecture).
+          {/if}
         </p>
         <label>
           Mode

@@ -5,7 +5,7 @@
   "type": "module",
   "main": "./out/main/main.js",
   "scripts": {
-    "predev": "sh scripts/dev-stop.sh && node scripts/ensure-electron.mjs",
+    "predev": "sh scripts/dev-stop.sh && node scripts/ensure-electron.mjs && pnpm --filter @ecpe/core --filter @ecpe/schemas run build",
     "postinstall": "node scripts/ensure-electron.mjs",
     "dev": "env -u ELECTRON_RUN_AS_NODE electron-vite dev",
     "dev:stop": "sh scripts/dev-stop.sh",

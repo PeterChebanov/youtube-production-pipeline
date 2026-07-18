@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { NARRATIVE_BALANCES } from './channel-video.js';
 
 export const COURSE_TYPES = ['build-along', 'theory'] as const;
 
@@ -10,6 +11,15 @@ export const CourseSchema = z.object({
   episodes_dir: z.string().default('episodes'),
   /** When true: each episode requires episode-code.json; scripts use real repo code only. */
   builds_application: z.boolean().default(false),
+  /** Local absolute path to the application repo on this machine (build-app courses). */
+  app_repo_path: z.string().default(''),
+  /** Optional remote URL shown to viewers (GitHub, etc.). */
+  app_repo_url: z.string().default(''),
+  /**
+   * Default narrative_balance for new episodes (especially build-app).
+   * Per-episode video.yaml still wins after create.
+   */
+  default_narrative_balance: z.enum(NARRATIVE_BALANCES).optional(),
 });
 
 export type Course = z.infer<typeof CourseSchema>;

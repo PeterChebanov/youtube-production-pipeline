@@ -5,10 +5,23 @@ export const EpisodeCodeDemoSchema = z.object({
   summary: z.string().default(''),
 });
 
+export const ScriptSourceFocusSchema = z.object({
+  focus: z.enum(['imports', 'types', 'functions', 'full', 'custom']).default('custom'),
+  labels: z.array(z.string()).default([]),
+  label: z.string().optional(),
+  start_line: z.number().int().positive().optional(),
+  end_line: z.number().int().positive().optional(),
+});
+
+export type ScriptSourceFocus = z.infer<typeof ScriptSourceFocusSchema>;
+
 export const EpisodeScriptSourceSchema = z.object({
   path: z.string().min(1),
   purpose: z.string().default(''),
+  /** @deprecated use focus[] — legacy string section names */
   sections: z.array(z.string()).optional(),
+  /** Pedagogical anchors for code display (resolved to line ranges from repo). */
+  focus: z.array(ScriptSourceFocusSchema).default([]),
 });
 
 export const EpisodeCodeMapEntrySchema = z.object({

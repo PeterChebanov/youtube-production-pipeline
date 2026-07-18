@@ -25,7 +25,12 @@ import {
 import { maybeArchiveArtifact } from './archive.js';
 import { openProject, readArtifact, readSourceBrief, writeArtifact } from './project.js';
 import { maybeAutoEpisodeWrap } from './episode-wrap.js';
-import { readCourseContextForEpisode, assertEpisodeBuildAppGate } from './course.js';
+import { assertEpisodeBuildAppGate } from './course.js';
+import { enrichBuildAppPromptContext } from './build-app-context.js';
+import {
+  logBuildAppNarrativeBalance,
+  warnBuildAppBalanceAfterStage,
+} from './build-app-balance-gate.js';
 import { reportProgress } from './progress.js';
 
 const LLM_STAGES = new Set<KnowledgeStageId>(
@@ -106,12 +111,7 @@ async function buildStageContext(
   const sourceBrief = await readSourceBrief(projectPath);
   if (sourceBrief) context.sourceBrief = sourceBrief;
 
-  const courseCtx = await readCourseContextForEpisode(projectPath);
-  if (courseCtx.applicationState) context.applicationState = courseCtx.applicationState;
-  if (courseCtx.priorCoverage) context.priorCoverage = courseCtx.priorCoverage;
-  if (courseCtx.courseName) context.courseName = courseCtx.courseName;
-  if (courseCtx.episodeNumber) context.episodeNumber = courseCtx.episodeNumber;
-  if (courseCtx.episodeCodeAppendix) context.episodeCodeAppendix = courseCtx.episodeCodeAppendix;
+  await enrichBuildAppPromptContext(projectPath, stageId, context);
 
   for (const key of STAGE_INPUTS[stageId]) {
     if (key === 'channel' || key === 'video') continue;
@@ -179,6 +179,12 @@ export async function runStage(
 
   loadEnv();
   const context = await buildStageContext(projectPath, stageId, options.revisionNotes);
+
+  let buildAppBalance: ReturnType<typeof logBuildAppNarrativeBalance> | undefined;
+  if (context.buildsApplication) {
+    buildAppBalance = logBuildAppNarrativeBalance(stageId, context.video);
+  }
+
   const { system, user } = await buildPrompts(stageId, context, projectPath);
 
   let content = await complete({
@@ -211,6 +217,10 @@ export async function runStage(
         });
       }
     }
+  }
+
+  if (context.buildsApplication && buildAppBalance) {
+    warnBuildAppBalanceAfterStage(stageId, content, buildAppBalance);
   }
 
   const outputFile = STAGE_OUTPUT[stageId];

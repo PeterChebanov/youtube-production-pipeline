@@ -21,6 +21,14 @@ export interface CourseInfo {
     type: 'build-along' | 'theory';
     description: string;
     builds_application?: boolean;
+    app_repo_path?: string;
+    app_repo_url?: string;
+    default_narrative_balance?: 'theory-first' | 'balanced' | 'practice-first';
+  };
+  appRepo?: {
+    configuredPath: string;
+    accessible: boolean;
+    message?: string;
   };
   state: {
     episodes: { episode: number; title: string; folder: string }[];
@@ -54,15 +62,13 @@ export interface EcpeApi {
     sourceBrief?: string;
   }) => Promise<{ root: string }>;
   createCourse: (input: {
-    name?: string;
+    name: string;
     parentDir?: string;
-    topic?: string;
-    sourceBrief?: string;
-    episodeCode?: string;
     description?: string;
-    type?: 'build-along' | 'theory';
     builds_application?: boolean;
-  }) => Promise<{ courseRoot: string; firstEpisodeRoot?: string }>;
+    app_repo_path?: string;
+    app_repo_url?: string;
+  }) => Promise<{ courseRoot: string }>;
   loadCourse: (root: string) => Promise<CourseInfo>;
   getCourseInfo: (root: string) => Promise<CourseInfo>;
   createEpisode: (input: {
@@ -71,11 +77,45 @@ export interface EcpeApi {
     topic?: string;
     sourceBrief?: string;
     episodeCode?: string;
+    demoWalkthroughMd?: string;
+    researchFocus?: string;
+    reviewFocus?: string;
+    narrativeBalance?: 'theory-first' | 'balanced' | 'practice-first';
   }) => Promise<{ root: string }>;
   getApplicationState: (root: string) => Promise<{ content: string }>;
   saveApplicationState: (root: string, content: string) => Promise<{ ok: boolean }>;
   getPriorCoverage: (root: string) => Promise<{ content: string }>;
   savePriorCoverage: (root: string, content: string) => Promise<{ ok: boolean }>;
+  updateCourseAppRepo: (input: {
+    courseRoot: string;
+    appRepoPath: string;
+    appRepoUrl?: string;
+  }) => Promise<CourseInfo>;
+  getEpisodeAuthoring: (projectRoot: string) => Promise<{
+    demo_walkthrough_md: string;
+    research_focus: string;
+    review_focus: string;
+  }>;
+  saveEpisodeAuthoring: (
+    projectRoot: string,
+    input: { demoWalkthroughMd?: string; researchFocus?: string; reviewFocus?: string },
+  ) => Promise<{
+    ok: boolean;
+    episodeCode?: { git_checkpoint: string; cumulative_scope: string[] };
+    episodeCodeError?: string;
+  }>;
+  regenerateEpisodeCode: (projectRoot: string) => Promise<{
+    json: string;
+    git_checkpoint: string;
+    cumulative_scope: string[];
+  }>;
+  generateEpisodeCode: (input: {
+    demoMarkdown: string;
+    episodeNumber: number;
+    repoUrl?: string;
+    courseRoot?: string;
+    appRepoPath?: string;
+  }) => Promise<{ json: string }>;
   getProjectInfo: (root: string) => Promise<unknown>;
   pickDirectory: (startPath?: string) => Promise<string | null>;
   pickTextFile: () => Promise<{ path: string; content: string } | null>;

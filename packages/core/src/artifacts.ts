@@ -13,6 +13,8 @@ export const ARTIFACTS = {
   editManifest: 'edit-manifest.json',
   /** Build-app: per-episode repository code binding (one episode only). */
   episodeCode: 'episode-code.json',
+  /** Build-app: demo walkthrough paste + stage focus overrides. */
+  episodeAuthoring: 'episode-authoring.yaml',
 } as const;
 
 export type ArtifactKey = keyof typeof ARTIFACTS;

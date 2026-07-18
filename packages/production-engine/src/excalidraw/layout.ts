@@ -11,6 +11,30 @@ export const SKETCH_GRID_COLS = 12;
 export const SKETCH_MARGIN_X_PCT = 9;
 export const SKETCH_MARGIN_Y_PCT = 10;
 
+/**
+ * Shrink connector bands as the vertical stack grows so node boxes keep
+ * enough height for icon + label (+ annotation). Fixed 8.5% bands starve
+ * nodes once N ≥ 5 (and collapse them near-zero by N ≈ 9).
+ */
+export function verticalConnectorBandPct(nodeCount: number): number {
+  if (nodeCount <= 2) return SKETCH_CONNECTOR_BAND_V_PCT;
+  if (nodeCount <= 3) return 7.5;
+  if (nodeCount <= 4) return 6.5;
+  if (nodeCount <= 5) return 5.0;
+  if (nodeCount <= 6) return 3.8;
+  if (nodeCount <= 7) return 3.0;
+  if (nodeCount <= 8) return 2.4;
+  return 2.0;
+}
+
+/** Tighter top/bottom canvas margins for dense vertical stacks. */
+export function verticalMarginPct(nodeCount: number): number {
+  if (nodeCount <= 4) return SKETCH_MARGIN_Y_PCT;
+  if (nodeCount <= 6) return 6;
+  if (nodeCount <= 8) return 4;
+  return 3;
+}
+
 export interface SketchElement {
   type: string;
   label?: string;
@@ -94,11 +118,23 @@ function layoutFlowVertical(chain: SketchChainItem[]): SketchNodePlacement[] {
   const colW = (100 - 2 * SKETCH_MARGIN_X_PCT) / SKETCH_GRID_COLS;
   const col = (SKETCH_GRID_COLS - colSpan) / 2;
   const bandCount = Math.max(0, n - 1);
-  const bandTotal = bandCount * SKETCH_CONNECTOR_BAND_V_PCT;
-  const usableH = 100 - 2 * SKETCH_MARGIN_Y_PCT - bandTotal;
-  const nodeH = usableH / n;
+  const marginY = verticalMarginPct(n);
+  let bandPct = verticalConnectorBandPct(n);
 
-  let top = SKETCH_MARGIN_Y_PCT;
+  // Keep nodes readable: icon + 2 text lines need ~50–70px on a ~800px body.
+  const minNodeH = n >= 8 ? 6.5 : n >= 6 ? 7.5 : n >= 5 ? 9 : 11;
+  const available = 100 - 2 * marginY;
+  let bandTotal = bandCount * bandPct;
+  let nodeH = (available - bandTotal) / n;
+
+  if (nodeH < minNodeH && bandCount > 0) {
+    const nodeBudget = Math.min(minNodeH * n, available * 0.84);
+    bandTotal = Math.max(bandCount * 1.4, available - nodeBudget);
+    bandPct = bandTotal / bandCount;
+    nodeH = (available - bandTotal) / n;
+  }
+
+  let top = marginY;
   return chain.map((item, i) => {
     const placement = {
       index: i,
@@ -109,9 +145,96 @@ function layoutFlowVertical(chain: SketchChainItem[]): SketchNodePlacement[] {
       heightPct: nodeH,
     };
     top += nodeH;
-    if (i < n - 1) top += SKETCH_CONNECTOR_BAND_V_PCT;
+    if (i < n - 1) top += bandPct;
     return placement;
   });
+}
+
+/** Column/row grid for dense boards: 6→2×3, 8→2×4, 9→3×3. */
+export function columnSplit(nodeCount: number): { cols: number; rows: number } {
+  if (nodeCount <= 5) return { cols: 1, rows: nodeCount };
+  if (nodeCount === 6) return { cols: 2, rows: 3 };
+  if (nodeCount === 7) return { cols: 2, rows: 4 }; // 4+3
+  if (nodeCount === 8) return { cols: 2, rows: 4 };
+  if (nodeCount === 9) return { cols: 3, rows: 3 };
+  if (nodeCount <= 12) return { cols: 3, rows: Math.ceil(nodeCount / 3) };
+  return { cols: 3, rows: Math.ceil(nodeCount / 3) };
+}
+
+/** @deprecated Prefer columnSplit — kept for callers expecting left/right counts. */
+export function twoColumnSplit(nodeCount: number): { left: number; right: number } {
+  const { cols, rows } = columnSplit(nodeCount);
+  if (cols <= 1) return { left: nodeCount, right: 0 };
+  const left = Math.min(rows, nodeCount);
+  return { left, right: Math.max(0, nodeCount - left) };
+}
+
+/**
+ * Multi-column vertical flow. Stack occupies ~76% of canvas height.
+ * Fill order: column-major (left column top→bottom, then next column).
+ * Connectors stay within each column only.
+ */
+function layoutFlowTwoColumn(chain: SketchChainItem[]): SketchNodePlacement[] {
+  const n = chain.length;
+  if (n === 0) return [];
+  const { cols, rows } = columnSplit(n);
+
+  const marginX = cols >= 3 ? 6.5 : 8;
+  const colGap = cols >= 3 ? 3.5 : 5;
+  const colW = (100 - 2 * marginX - colGap * (cols - 1)) / cols;
+
+  const stackH = 76;
+  const marginY = (100 - stackH) / 2;
+  const bandPct = rows <= 3 ? 5.2 : rows <= 4 ? 4.0 : 3.2;
+  const bandTotal = Math.max(0, rows - 1) * bandPct;
+  const nodeH = (stackH - bandTotal) / rows;
+
+  const nodes: SketchNodePlacement[] = [];
+  for (let i = 0; i < n; i++) {
+    const c = Math.min(cols - 1, Math.floor(i / rows));
+    const r = i - c * rows;
+    nodes.push({
+      index: i,
+      box: chain[i]!.box,
+      leftPct: marginX + c * (colW + colGap),
+      topPct: marginY + r * (nodeH + bandPct),
+      widthPct: colW,
+      heightPct: nodeH,
+    });
+  }
+  return nodes;
+}
+
+/** Down-arrows only within each column — never across columns. */
+function connectorsForTwoColumn(chain: SketchChainItem[]): SketchConnectorPlacement[] {
+  const n = chain.length;
+  const { cols, rows } = columnSplit(n);
+  const out: SketchConnectorPlacement[] = [];
+  if (cols <= 1) {
+    for (let i = 0; i < n - 1; i++) {
+      out.push({
+        fromIndex: i,
+        toIndex: i + 1,
+        label: chain[i + 1]?.arrowLabel,
+        direction: 'down',
+      });
+    }
+    return out;
+  }
+
+  for (let c = 0; c < cols; c++) {
+    const start = c * rows;
+    const end = Math.min(n, start + rows);
+    for (let i = start; i < end - 1; i++) {
+      out.push({
+        fromIndex: i,
+        toIndex: i + 1,
+        label: chain[i + 1]?.arrowLabel,
+        direction: 'down',
+      });
+    }
+  }
+  return out;
 }
 
 function layoutPipelineHorizontal(chain: SketchChainItem[]): SketchNodePlacement[] {
@@ -251,20 +374,29 @@ function connectorsForDecisionTree(chain: SketchChainItem[]): SketchConnectorPla
 
 export function resolveSketchLayoutKind(layout: string, elements: SketchElement[]): string {
   const normalized = layout.trim().toLowerCase();
+  const chain = parseSketchChain(elements);
   if (normalized === 'pipeline_horizontal') return 'pipeline_horizontal';
+  if (normalized === 'flow_columns' || normalized === 'flow_two_column') return 'flow_columns';
+  // Dense vertical chains become two columns so text/icons stay video-readable.
+  if (
+    (normalized === 'flow_vertical' || normalized === 'flowchart_vertical') &&
+    chain.length >= 6
+  ) {
+    return 'flow_columns';
+  }
   if (normalized === 'flow_vertical' || normalized === 'flowchart_vertical') return 'flow_vertical';
   if (normalized === 'decision_tree') {
-    const chain = parseSketchChain(elements);
-    if (chain.length >= 3 && /trade|lower-|✓|✗/i.test(chain.map((c) => c.box.position || c.box.label || '').join(' '))) {
+    if (chain.length >= 3 && /ticket|lower-|✓|✗/i.test(chain.map((c) => c.box.position || c.box.label || '').join(' '))) {
       return 'decision_tree';
     }
+    if (chain.length >= 6) return 'flow_columns';
     return chain.length <= 4 ? 'flow_vertical' : 'decision_tree';
   }
   if (elements.some((e) => e.type === 'flow')) return 'comparison_horizontal';
   if (elements.some((e) => e.type === 'question')) return 'decision_tree';
-  const chain = parseSketchChain(elements);
   if (chain.length <= 2) return 'pipeline_horizontal';
   if (chain.length <= 4) return 'flow_vertical';
+  if (chain.length >= 6) return 'flow_columns';
   return 'decision_tree';
 }
 
@@ -304,6 +436,7 @@ function buildConnectorBands(
     if (!existing) {
       const left = Math.min(from.leftPct, to.leftPct);
       const right = Math.max(from.leftPct + from.widthPct, to.leftPct + to.widthPct);
+      const gapH = Math.max(1.2, to.topPct - (from.topPct + from.heightPct));
       gapMap.set(key, {
         fromIndex: c.fromIndex,
         toIndex: c.toIndex,
@@ -312,7 +445,7 @@ function buildConnectorBands(
         leftPct: left,
         topPct: from.topPct + from.heightPct,
         widthPct: right - left,
-        heightPct: SKETCH_CONNECTOR_BAND_V_PCT,
+        heightPct: gapH,
       });
     } else if (c.label && !existing.label) {
       existing.label = c.label;
@@ -334,27 +467,28 @@ export function buildSketchLayoutPlan(layout: string, elements: SketchElement[])
 
   let nodes: SketchNodePlacement[];
   let direction: 'down' | 'right' = 'down';
+  let connectors: SketchConnectorPlacement[];
 
   switch (kind) {
     case 'pipeline_horizontal':
       nodes = layoutPipelineHorizontal(chain);
       direction = 'right';
+      connectors = connectorsForChain(chain, direction);
       break;
     case 'decision_tree':
       nodes = layoutDecisionTree(chain);
-      direction = 'down';
+      connectors = connectorsForDecisionTree(chain);
+      break;
+    case 'flow_columns':
+      nodes = layoutFlowTwoColumn(chain);
+      connectors = connectorsForTwoColumn(chain);
       break;
     case 'flow_vertical':
     default:
       nodes = layoutFlowVertical(chain);
-      direction = 'down';
+      connectors = connectorsForChain(chain, direction);
       break;
   }
-
-  const connectors =
-    kind === 'decision_tree'
-      ? connectorsForDecisionTree(chain)
-      : connectorsForChain(chain, direction);
 
   return {
     kind,
@@ -365,12 +499,17 @@ export function buildSketchLayoutPlan(layout: string, elements: SketchElement[])
   };
 }
 
-/** Scale up sketch boards with few blocks so they fill the 1080p frame. */
+/**
+ * Typography scale. Two-column boards (N≥6) keep larger type because nodes
+ * are taller; only single-column mid stacks need aggressive shrink.
+ */
 export function sparseScaleForCount(blockCount: number): number {
   if (blockCount <= 2) return 1.28;
   if (blockCount <= 3) return 1.12;
   if (blockCount <= 4) return 0.98;
-  if (blockCount <= 5) return 0.92;
+  if (blockCount === 5) return 0.9;
+  if (blockCount <= 6) return 1.05;
+  if (blockCount <= 8) return 0.95;
   return 0.88;
 }
 
@@ -379,7 +518,8 @@ export function sparseScaleCandidates(blockCount: number): number[] {
   const out: number[] = [primary];
   if (primary > 1.15) out.push(1.12);
   if (primary > 1.0) out.push(1.0);
-  return [...new Set(out)];
+  if (blockCount >= 6) out.push(Math.round(primary * 90) / 100, 0.82);
+  return [...new Set(out)].sort((a, b) => b - a);
 }
 
 export function countSketchBlocks(elements: { type: string }[]): number {

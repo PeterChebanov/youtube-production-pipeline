@@ -19,7 +19,7 @@ import {
   revealBlockAttrs,
   type RevealStamp,
 } from '../animations/stamp.js';
-import { resolveIconName, sketchIconBadgeHtml } from '../icons/index.js';
+import { createSceneIconAllocator, sketchIconBadgeHtml } from '../icons/index.js';
 import { sketchRoughScript } from './rough-script.js';
 import {
   accentuateSketchHtml,
@@ -108,10 +108,15 @@ function humanizeTitle(scene: ProductionScene): string {
     .join(' ');
 }
 
-function boxIconHtml(box: SketchElement, sceneId: string, index: number, size: number): string {
-  const name = resolveIconName({
+function boxIconHtml(
+  box: SketchElement,
+  sceneId: string,
+  index: number,
+  size: number,
+  allocator: ReturnType<typeof createSceneIconAllocator>,
+): string {
+  const name = allocator.resolve({
     explicit: box.icon,
-    variant: 'sketch',
     seed: `${sceneId}:box:${index}`,
     textParts: [box.label, box.text, box.annotation],
   });
@@ -135,10 +140,11 @@ function renderSketchNode(
   stamp: RevealStamp,
   placement: SketchNodePlacement,
   sceneId: string,
-  scale: number,
+  _scale: number,
   layoutKind: string,
   total: number,
   animated: boolean,
+  allocator: ReturnType<typeof createSceneIconAllocator>,
 ): string {
   const box = placement.box;
   const rawLabel = box.label || box.text || `Step ${placement.index + 1}`;
@@ -152,18 +158,22 @@ function renderSketchNode(
   const fillStyle = resolveSketchFillStyle(box, placement.index, total, layoutKind);
   const { frameDelay } = sketchBlockTimings(placement.index);
   const style = `left:${placement.leftPct.toFixed(3)}%;top:${placement.topPct.toFixed(3)}%;width:${placement.widthPct.toFixed(3)}%;height:${placement.heightPct.toFixed(3)}%`;
-  const iconSize = Math.round(48 * scale);
+  // Icon ≈ half the node height (sketch body ~860px @ 1080p after title band).
+  const iconSize = Math.max(
+    52,
+    Math.min(140, Math.round((placement.heightPct / 100) * 860 * 0.55)),
+  );
   const innerAttrs = animated
     ? sketchRevealInnerAttrs(stamp, placement.index, 'sketch-node-inner')
     : 'class="sketch-node-inner"';
   const frameDelayAttr = animated ? ` data-frame-delay="${frameDelay.toFixed(3)}"` : '';
   return `<div class="sketch-node" data-node="${placement.index}" data-fill="${fillStyle}"${frameDelayAttr} style="${style}">
     <div ${innerAttrs}>
-      <div class="sketch-box-head">
-        <div class="sketch-box-icon">${boxIconHtml(box, sceneId, placement.index, iconSize)}</div>
+      <div class="sketch-box-icon">${boxIconHtml(box, sceneId, placement.index, iconSize, allocator)}</div>
+      <div class="sketch-box-copy">
         <div class="sketch-box-label">${label}</div>
+        ${ann}
       </div>
-      ${ann}
     </div>
   </div>`;
 }
@@ -214,14 +224,21 @@ function renderGridCanvas(
   animated: boolean,
 ): string {
   const plan = buildSketchLayoutPlan(layout, elements);
+  const allocator = createSceneIconAllocator('sketch');
   type CanvasItem = { top: number; html: string };
   const items: CanvasItem[] = [];
 
+  // Resolve icons in stable node-index order so uniqueness is deterministic.
+  const nodesByIndex = [...plan.nodes].sort((a, b) => a.index - b.index);
+  const nodeHtml = new Map<number, string>();
+  for (const n of nodesByIndex) {
+    nodeHtml.set(
+      n.index,
+      renderSketchNode(stamp, n, sceneId, scale, plan.kind, plan.nodes.length, animated, allocator),
+    );
+  }
   for (const n of plan.nodes) {
-    items.push({
-      top: n.topPct,
-      html: renderSketchNode(stamp, n, sceneId, scale, plan.kind, plan.nodes.length, animated),
-    });
+    items.push({ top: n.topPct, html: nodeHtml.get(n.index)! });
   }
   for (const b of plan.bands) {
     items.push({ top: b.topPct, html: renderConnectorBand(b, animated) });
@@ -239,8 +256,8 @@ function renderGridCanvas(
 }
 
 function buildSketchCss(theme: VisualTheme, scale = 1, animated = false): string {
-  const bodyLabel = Math.round(38 * scale);
-  const bodyAnn = Math.round(27 * scale);
+  const bodyLabel = Math.round(42 * scale);
+  const bodyAnn = Math.round(30 * scale);
   const connLabel = Math.round(22 * scale);
   return `
   ${animated ? revealAnimationCss() : ''}
@@ -285,24 +302,43 @@ function buildSketchCss(theme: VisualTheme, scale = 1, animated = false): string
     align-items: stretch; justify-content: stretch; overflow: hidden;
   }
   .sketch-node-inner {
-    width: 100%; height: 100%; display: flex; flex-direction: column;
-    justify-content: center; gap: ${px(8, scale)};
-    padding: ${px(14, scale)} ${px(18, scale)}; box-sizing: border-box;
+    width: 100%; height: 100%; display: flex; flex-direction: row;
+    align-items: center; gap: ${px(22, scale)};
+    padding: ${px(10, scale)} ${px(20, scale)} ${px(10, scale)} ${px(16, scale)};
+    box-sizing: border-box;
     font-family: 'Excalifont', 'Segoe Print', cursive;
     color: ${theme.textPrimary}; background: transparent; border: none;
     box-shadow: none;
   }
-  .sketch-box-head {
-    display: flex; align-items: center; gap: ${px(12, scale)}; width: 100%;
+  .sketch-box-icon {
+    line-height: 0; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    height: 58%;
+    aspect-ratio: 1;
+    max-height: 160px;
   }
-  .sketch-box-icon { line-height: 0; flex-shrink: 0; }
+  .sketch-box-icon > span,
+  .sketch-box-icon .ecpe-icon-badge,
+  .sketch-box-icon svg {
+    width: 100% !important;
+    height: 100% !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    max-width: 100%;
+    max-height: 100%;
+  }
+  .sketch-box-copy {
+    flex: 1; min-width: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: ${px(8, scale)};
+    text-align: center;
+  }
   .sketch-box-label {
-    flex: 1; text-align: left; font-size: ${bodyLabel}px;
-    font-weight: 400; line-height: 1.32;
+    width: 100%; text-align: center; font-size: ${bodyLabel}px;
+    font-weight: 400; line-height: 1.22;
   }
   .sketch-annotation {
-    font-size: ${bodyAnn}px; color: #d4d4d8;
-    line-height: 1.4; text-align: left;
+    width: 100%; font-size: ${bodyAnn}px; color: #d4d4d8;
+    line-height: 1.3; text-align: center;
   }
   .sketch-annotation-negative { color: #fcd9a0; }
   .sketch-annotation-positive { color: #a7f3d0; }
@@ -358,27 +394,37 @@ function buildSketchCss(theme: VisualTheme, scale = 1, animated = false): string
   .branch-label { font-size: ${Math.round(34 * scale)}px; margin-bottom: ${px(8, scale)}; }
   .example { font-size: ${bodyAnn}px; line-height: 1.4; }
   body.layout-compact h1.title { font-size: ${Math.round(SLIDE_TITLE_FONT_PX * 0.82)}px; }
-  body.layout-compact .sketch-box-label { font-size: ${Math.round(bodyLabel * 0.82)}px; }
-  body.layout-dense .sketch-box-label { font-size: ${Math.round(bodyLabel * 0.88)}px; }
-  body.layout-dense .sketch-annotation { font-size: ${Math.round(bodyAnn * 0.9)}px; }
-  body.layout-dense h1.title { font-size: ${Math.round(SLIDE_TITLE_FONT_PX * 0.88)}px; }
+  body.layout-compact .sketch-box-label { font-size: ${Math.round(bodyLabel * 0.9)}px; }
+  body.layout-compact .sketch-annotation { font-size: ${Math.round(bodyAnn * 0.9)}px; }
+  body.layout-dense .sketch-box-label { font-size: ${Math.round(bodyLabel * 0.94)}px; }
+  body.layout-dense .sketch-annotation { font-size: ${Math.round(bodyAnn * 0.94)}px; }
+  body.layout-dense h1.title { font-size: ${Math.round(SLIDE_TITLE_FONT_PX * 0.9)}px; }
+  body.layout-columns .sketch-node-inner {
+    gap: ${px(22, scale)}; padding: ${px(10, scale)} ${px(18, scale)} ${px(10, scale)} ${px(16, scale)};
+  }
+  body.layout-columns .sketch-box-icon { height: 56%; max-height: 150px; }
+  body.layout-columns .sketch-box-label { font-size: ${Math.round(46 * scale)}px; line-height: 1.14; }
+  body.layout-columns .sketch-annotation { font-size: ${Math.round(30 * scale)}px; line-height: 1.22; }
+  body.layout-columns .sketch-box-copy { gap: ${px(6, scale)}; }
+  body.layout-columns h1.title { font-size: ${Math.round(SLIDE_TITLE_FONT_PX * 0.92)}px; }
 `;
 }
 
 function renderComparisonHorizontal(elements: SpecElement[], stamp: RevealStamp, sceneId: string, scale: number): string {
   const flows = elements.filter((e) => e.type === 'flow');
   const annotation = elements.find((e) => e.type === 'annotation');
+  const allocator = createSceneIconAllocator('sketch');
   const cols = flows
     .map((flow, i) => {
       const steps = (flow.steps ?? []).map((s) => `<div class="flow-step">${escapeHtml(s)}</div>`).join('');
-      const iconName = resolveIconName({
-        explicit: flow.icon,
-        variant: 'sketch',
-        seed: `${sceneId}:flow:${i}`,
-        textParts: [flow.label, ...(flow.steps ?? [])],
-      });
       return `<div class="col"><div ${revealBlockAttrs(stamp, 'flow-card')}>
-        <div class="sketch-box-icon">${boxIconHtml({ type: 'box', icon: iconName, label: flow.label }, sceneId, i, Math.round(36 * scale))}</div>
+        <div class="sketch-box-icon">${boxIconHtml(
+          { type: 'box', icon: flow.icon, label: flow.label },
+          sceneId,
+          i,
+          Math.round(36 * scale),
+          allocator,
+        )}</div>
         <div class="flow-label">${escapeHtml(flow.label ?? 'Flow')}</div>${steps}
         ${flow.total ? `<div class="flow-total">${escapeHtml(flow.total)}</div>` : ''}
       </div></div>`;
@@ -454,7 +500,9 @@ export function buildExcalidrawHtml(
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"/>
 <style>${buildSketchCss(theme, scale, animated)}</style></head>
-<body class="sketch-mode${blockCount >= 4 ? ' layout-dense' : ''}">
+<body class="sketch-mode${
+    blockCount >= 6 ? ' layout-columns' : blockCount >= 4 ? ' layout-dense' : ''
+  }">
   <div class="brand-layer"></div>
   <div class="sketch-dot-layer" aria-hidden="true"></div>
   <div class="frame"><div class="frame-inner sketch-content">

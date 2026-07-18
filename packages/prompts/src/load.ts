@@ -36,6 +36,12 @@ export interface PromptContext {
   productionPlan?: string;
   /** Build-app: formatted episode code binding from episode-code.json */
   episodeCodeAppendix?: string;
+  /** Build-app: demo walkthrough + stage focus from episode-authoring.yaml */
+  episodeAuthoringAppendix?: string;
+  /** Build-app: resolved repo line anchors for visual-designer */
+  codeMapAppendix?: string;
+  /** When true, append build-app overlay prompts for this stage */
+  buildsApplication?: boolean;
   /** Course-level assumed prior knowledge from other channel content */
   priorCoverage?: string;
   /** ISO date YYYY-MM-DD — injected automatically in buildPrompts. */
@@ -91,6 +97,12 @@ export async function renderUserPrompt(
   return template(context).trim();
 }
 
+export async function loadBuildAppOverlay(stageId: string): Promise<string | undefined> {
+  const overlayPath = path.join(GLOBAL_PROMPTS_ROOT, 'build-app', stageId, 'overlay.md');
+  if (!(await exists(overlayPath))) return undefined;
+  return readFile(overlayPath, 'utf8');
+}
+
 export async function buildPrompts(
   stageId: string,
   context: PromptContext,
@@ -98,7 +110,13 @@ export async function buildPrompts(
 ): Promise<{ system: string; user: string }> {
   enrichDateContext(context);
   enrichWordBudgetContext(context);
-  const system = await loadSystemPrompt(stageId, projectPath);
+  let system = await loadSystemPrompt(stageId, projectPath);
+  if (context.buildsApplication) {
+    const overlay = await loadBuildAppOverlay(stageId);
+    if (overlay?.trim()) {
+      system += `\n\n---\n${overlay.trim()}`;
+    }
+  }
   let user = await renderUserPrompt(stageId, context, projectPath);
 
   if (context.revisionNotes?.trim()) {
@@ -121,7 +139,17 @@ export async function buildPrompts(
     user += `\n\n---\n${context.episodeCodeAppendix.trim()}`;
   }
 
-  const narrativeAppendix = buildNarrativeBalanceAppendix(context.video, context.priorCoverage);
+  if (context.episodeAuthoringAppendix?.trim()) {
+    user += `\n\n---\n${context.episodeAuthoringAppendix.trim()}`;
+  }
+
+  if (context.codeMapAppendix?.trim()) {
+    user += `\n\n---\n${context.codeMapAppendix.trim()}`;
+  }
+
+  const narrativeAppendix = buildNarrativeBalanceAppendix(context.video, context.priorCoverage, {
+    buildsApplication: !!context.buildsApplication,
+  });
   if (narrativeAppendix) {
     user += `\n\n---\n${narrativeAppendix}`;
   }

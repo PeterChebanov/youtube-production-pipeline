@@ -1,7 +1,6 @@
 {
   "version": 1,
   "repo_url": "https://github.com/you/your-app",
-  "repo_path": "/absolute/path/to/your-app",
   "title": "Episode title",
   "has_code": true,
   "git_checkpoint": "ep01",

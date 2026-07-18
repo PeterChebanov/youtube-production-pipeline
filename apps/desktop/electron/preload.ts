@@ -14,6 +14,26 @@ contextBridge.exposeInMainWorld('ecpe', {
   getPriorCoverage: (root: string) => ipcRenderer.invoke('course:getPriorCoverage', root),
   savePriorCoverage: (root: string, content: string) =>
     ipcRenderer.invoke('course:savePriorCoverage', root, content),
+  updateCourseAppRepo: (input: {
+    courseRoot: string;
+    appRepoPath: string;
+    appRepoUrl?: string;
+  }) => ipcRenderer.invoke('course:updateAppRepo', input),
+  getEpisodeAuthoring: (projectRoot: string) =>
+    ipcRenderer.invoke('episode:getAuthoring', projectRoot),
+  saveEpisodeAuthoring: (
+    projectRoot: string,
+    input: { demoWalkthroughMd?: string; researchFocus?: string; reviewFocus?: string },
+  ) => ipcRenderer.invoke('episode:saveAuthoring', projectRoot, input),
+  regenerateEpisodeCode: (projectRoot: string) =>
+    ipcRenderer.invoke('episode:regenerateCode', projectRoot),
+  generateEpisodeCode: (input: {
+    demoMarkdown: string;
+    episodeNumber: number;
+    repoUrl?: string;
+    courseRoot?: string;
+    appRepoPath?: string;
+  }) => ipcRenderer.invoke('episode:generateCode', input),
   getProjectInfo: (root: string) => ipcRenderer.invoke('project:info', root),
   pickDirectory: (startPath?: string) => ipcRenderer.invoke('project:pickDirectory', startPath),
   pickTextFile: () => ipcRenderer.invoke('project:pickTextFile'),

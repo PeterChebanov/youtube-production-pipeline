@@ -10,7 +10,20 @@ for pattern in \
   "video-production-pipeline/apps/desktop.*wait-on" \
   "video-production-pipeline/apps/desktop.*start-electron" \
   "video-production-pipeline/apps/desktop.*electron-vite" \
-  "video-production-pipeline/apps/desktop.*vite"
+  "video-production-pipeline/apps/desktop.*vite" \
+  "video-production-pipeline/apps/desktop/out/main" \
+  "video-production-pipeline/apps/desktop.*Electron"
+do
+  pids=$(pgrep -f "$pattern" 2>/dev/null || true)
+  if [ -n "$pids" ]; then
+    kill -9 $pids 2>/dev/null || true
+  fi
+done
+
+# Orphan Electron windows from this repo (survive vite restarts; keep stale IPC handlers)
+for pattern in \
+  "Electron.*video-production-pipeline" \
+  "Electron Helper.*video-production-pipeline"
 do
   pids=$(pgrep -f "$pattern" 2>/dev/null || true)
   if [ -n "$pids" ]; then

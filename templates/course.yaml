@@ -4,3 +4,8 @@ type: build-along
 description: ""
 episodes_dir: episodes
 builds_application: false
+# Build-app only — local checkout on this machine (all episodes share one path):
+app_repo_path: ""
+app_repo_url: ""
+# Optional default for new episodes (theory-first | balanced | practice-first):
+# default_narrative_balance: practice-first

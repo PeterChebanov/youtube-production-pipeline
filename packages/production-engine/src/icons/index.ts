@@ -2,75 +2,142 @@ import { ICON_CATALOG, ICON_NAMES } from './catalog.js';
 
 export type IconVariant = 'ui' | 'motion' | 'sketch';
 
+/** Plan / LLM aliases → catalog keys (unknown names used to collapse into circle-dot). */
+export const ICON_ALIASES: Record<string, string> = {
+  'map-pin': 'map-pin',
+  pin: 'map-pin',
+  'x-circle': 'circle-x',
+  'x-octagon': 'circle-x',
+  times: 'circle-x',
+  'alert-triangle': 'warning',
+  alert: 'circle-alert',
+  'circle-alert': 'circle-alert',
+  sliders: 'sliders-horizontal',
+  'sliders-horizontal': 'sliders-horizontal',
+  repeat: 'repeat-2',
+  'repeat-2': 'repeat-2',
+  refresh: 'refresh',
+  'git-branch': 'git-branch',
+  branch: 'git-branch',
+  'dollar-sign': 'dollar-sign',
+  dollar: 'dollar',
+  unlock: 'lock-open',
+  'lock-open': 'lock-open',
+  funnel: 'filter',
+  'pie-chart': 'chart',
+  'check-circle': 'check-circle',
+  'circle-check': 'circle-check',
+  cog: 'settings',
+  gear: 'settings',
+  sparkles: 'sparkles',
+  sparkle: 'sparkle',
+};
+
 const UI_KEYWORD_RULES: [RegExp, string[]][] = [
-  [/embed|chunk|vector|ingest|storage|pgvector/i, ['database', 'layers', 'archive']],
-  [/retriev|search|rerank|similarity/i, ['search', 'scan', 'filter']],
-  [/generat|llm|gpt|claude|answer|stream/i, ['brain', 'sparkles', 'wand']],
-  [/observ|log|metric|monitor|latency|cost/i, ['eye', 'chart', 'gauge']],
-  [/pipeline|flow|step|process|async/i, ['workflow', 'route', 'git']],
-  [/agent|bot|automat|tool.?call/i, ['bot', 'cpu', 'wand']],
-  [/human|team|user|support|ticket|customer|escalat/i, ['users', 'handshake', 'headphones']],
-  [/cost|dollar|saving|roi|price|\$/i, ['dollar', 'wallet', 'chart']],
-  [/architect|block|system|component/i, ['layers', 'blocks', 'network']],
-  [/code|api|json|typescript|python/i, ['code', 'terminal', 'file']],
-  [/terminal|cli|npm|docker/i, ['terminal', 'server', 'package']],
-  [/security|guard|shield/i, ['shield', 'lock', 'fingerprint']],
-  [/compar|versus|vs\b|trade/i, ['scale', 'chart', 'target']],
-  [/cloud|deploy|infra/i, ['cloud', 'server', 'globe']],
-  [/file|document|markdown|export/i, ['file', 'clipboard', 'book']],
-  [/message|chat|query|question/i, ['message', 'help', 'mail']],
-  [/performance|speed|fast|budget|latency/i, ['gauge', 'zap', 'timer']],
-  [/git|repo|github/i, ['git', 'branch', 'code']],
-  [/cpu|compute|model/i, ['cpu', 'brain', 'atom']],
-  [/cancel|subscription|billing/i, ['ticket', 'wallet', 'ban']],
-  [/wrong|fail|error|hallucin/i, ['warning', 'ban', 'bug']],
-  [/future|later|roadmap|evolution/i, ['rocket', 'trending', 'route']],
+  [/embed|chunk|vector|ingest|storage|pgvector/i, ['database', 'layers', 'archive', 'boxes', 'hard-drive']],
+  [/retriev|search|rerank|similarity|semantic/i, ['search', 'scan', 'filter', 'scan-search', 'binoculars', 'text-search']],
+  [/generat|llm|gpt|claude|answer|stream/i, ['brain', 'sparkles', 'wand', 'brain-circuit', 'wand-sparkles', 'bot-message-square']],
+  [/observ|log|metric|monitor|latency|cost/i, ['eye', 'chart', 'gauge', 'activity', 'radar', 'telescope']],
+  [/pipeline|flow|step|process|async/i, ['workflow', 'route', 'git', 'waypoints', 'combine', 'split']],
+  [/agent|bot|automat|tool.?call/i, ['bot', 'cpu', 'wand', 'bot-message-square', 'sparkle', 'wrench']],
+  [/human|team|user|support|ticket|customer|escalat/i, ['users', 'handshake', 'headphones', 'user', 'life-buoy']],
+  [/cost|dollar|saving|roi|price|\$/i, ['dollar', 'dollar-sign', 'wallet', 'chart', 'trending', 'calculator']],
+  [/architect|block|system|component/i, ['layers', 'blocks', 'network', 'component', 'boxes', 'circuit-board']],
+  [/code|api|json|typescript|python/i, ['code', 'terminal', 'file', 'file-code', 'brackets', 'binary']],
+  [/terminal|cli|npm|docker/i, ['terminal', 'server', 'package', 'container', 'hard-drive']],
+  [/security|guard|shield/i, ['shield', 'lock', 'fingerprint', 'shield-check', 'lock-open']],
+  [/compar|versus|vs\b|trade/i, ['scale', 'chart', 'target', 'git-compare', 'equal']],
+  [/cloud|deploy|infra/i, ['cloud', 'server', 'globe', 'factory', 'server-cog']],
+  [/file|document|markdown|export/i, ['file', 'clipboard', 'book', 'folder', 'book-open']],
+  [/message|chat|query|question/i, ['message', 'help', 'mail', 'send', 'bot-message-square']],
+  [/performance|speed|fast|budget|latency/i, ['gauge', 'zap', 'timer', 'power', 'flame']],
+  [/git|repo|github/i, ['git', 'git-branch', 'code', 'git-merge', 'git-compare']],
+  [/cpu|compute|model/i, ['cpu', 'brain', 'atom', 'brain-circuit', 'circuit-board']],
+  [/cancel|subscription|billing/i, ['ticket', 'wallet', 'ban', 'circle-x']],
+  [/wrong|fail|error|hallucin|irrelevant|poor/i, ['warning', 'ban', 'bug', 'circle-x', 'circle-alert']],
+  [/future|later|roadmap|evolution/i, ['rocket', 'trending', 'route', 'telescope', 'sprout']],
 ];
 
 const MOTION_KEYWORD_RULES: [RegExp, string[]][] = [
-  [/embed|chunk|vector|ingest/i, ['package', 'database', 'inbox']],
-  [/retriev|search|rerank/i, ['binoculars', 'radar', 'crosshair']],
-  [/generat|llm|answer|stream/i, ['lightbulb', 'sparkles', 'pen']],
-  [/observ|monitor|metric/i, ['activity', 'target', 'compass']],
-  [/pipeline|flow|step/i, ['route', 'network', 'plug']],
-  [/agent|bot|tool/i, ['bot', 'hammer', 'tool']],
-  [/human|support|escalat/i, ['handshake', 'phone', 'megaphone']],
-  [/cost|dollar|budget/i, ['wallet', 'trending', 'chart']],
-  [/architect|block|system/i, ['blocks', 'puzzle', 'map']],
-  [/code|api|json/i, ['code', 'terminal', 'wrench']],
-  [/security|guard/i, ['shield', 'lock', 'key']],
-  [/compar|versus|trade/i, ['scale', 'target', 'chart']],
-  [/cloud|deploy/i, ['cloud', 'upload', 'globe']],
-  [/file|document/i, ['file', 'book', 'clipboard']],
-  [/message|query|question/i, ['message', 'help', 'mic']],
-  [/performance|speed|latency/i, ['timer', 'gauge', 'zap']],
-  [/future|later|evolution/i, ['rocket', 'star', 'trending']],
-  [/narrow|domain|faq/i, ['target', 'book', 'flag']],
-  [/password|reset/i, ['key', 'lock', 'refresh']],
+  [/embed|chunk|vector|ingest/i, ['package', 'database', 'inbox', 'boxes', 'package-open']],
+  [/retriev|search|rerank/i, ['binoculars', 'radar', 'crosshair', 'scan-search', 'search-check']],
+  [/generat|llm|answer|stream/i, ['lightbulb', 'sparkles', 'pen', 'wand-sparkles', 'brain-circuit']],
+  [/observ|monitor|metric/i, ['activity', 'target', 'compass', 'telescope', 'radar']],
+  [/pipeline|flow|step/i, ['route', 'network', 'plug', 'waypoints', 'iteration-ccw']],
+  [/agent|bot|tool/i, ['bot', 'hammer', 'tool', 'bot-message-square', 'wrench']],
+  [/human|support|escalat/i, ['handshake', 'phone', 'megaphone', 'life-buoy', 'users']],
+  [/cost|dollar|budget/i, ['wallet', 'trending', 'chart', 'dollar-sign', 'calculator']],
+  [/architect|block|system/i, ['blocks', 'puzzle', 'map', 'component', 'boxes']],
+  [/code|api|json/i, ['code', 'terminal', 'wrench', 'brackets', 'file-code']],
+  [/security|guard/i, ['shield', 'lock', 'key', 'shield-check', 'fingerprint']],
+  [/compar|versus|trade/i, ['scale', 'target', 'chart', 'git-compare', 'equal']],
+  [/cloud|deploy/i, ['cloud', 'upload', 'globe', 'server-cog', 'factory']],
+  [/file|document/i, ['file', 'book', 'clipboard', 'folder', 'book-open']],
+  [/message|query|question/i, ['message', 'help', 'mic', 'send', 'radio']],
+  [/performance|speed|latency/i, ['timer', 'gauge', 'zap', 'power', 'flame']],
+  [/future|later|evolution/i, ['rocket', 'star', 'trending', 'sprout', 'telescope']],
+  [/narrow|domain|faq/i, ['target', 'book', 'flag', 'goal', 'pin']],
+  [/password|reset/i, ['key', 'lock', 'refresh', 'lock-open', 'unlock']],
 ];
 
 const SKETCH_KEYWORD_RULES: [RegExp, string[]][] = [
-  [/embed|chunk|vector|ingest/i, ['archive', 'box', 'layers']],
-  [/retriev|search|wrong|chunk/i, ['search', 'filter', 'scan']],
-  [/generat|llm|answer|fluent|wrong/i, ['brain', 'message', 'warning']],
-  [/pipeline|flow|step|now|later/i, ['workflow', 'route', 'arrow-down']],
-  [/agent|bot|tool|react/i, ['bot', 'wand', 'tool']],
-  [/human|escalat|support|user/i, ['users', 'handshake', 'phone']],
-  [/cost|expensive|latency|budget/i, ['dollar', 'timer', 'gauge']],
-  [/capable|multi.?step|predict/i, ['puzzle', 'brain', 'target']],
-  [/trade|versus|vs\b/i, ['scale', 'chart', 'check-circle']],
-  [/cancel|subscription|billing/i, ['ban', 'ticket', 'wallet']],
-  [/document|docs|search/i, ['book', 'file', 'search']],
-  [/database|query|db/i, ['database', 'server', 'cpu']],
-  [/clarif|question|ask/i, ['help', 'message', 'mic']],
-  [/security|guard/i, ['shield', 'lock', 'eye']],
-  [/future|tool.?use/i, ['rocket', 'sparkles', 'wand']],
+  [/embed|chunk|vector|ingest|meaning.?space|cosine|region/i, [
+    'archive', 'box', 'layers', 'orbit', 'diamond', 'map-pin', 'locate', 'globe', 'waypoints', 'atom',
+  ]],
+  [/retriev|search|wrong|chunk|quality|gate|optimize/i, [
+    'search', 'filter', 'scan', 'scan-search', 'binoculars', 'text-search', 'search-check', 'goal', 'aperture', 'telescope',
+  ]],
+  [/generat|llm|answer|fluent|wrong|decides|agent/i, [
+    'brain', 'message', 'warning', 'brain-circuit', 'sparkles', 'bot', 'wand-sparkles', 'bot-message-square', 'cpu', 'sparkle',
+  ]],
+  [/pipeline|flow|step|now|later|iterate|again|depends/i, [
+    'workflow', 'route', 'arrow-down', 'repeat-2', 'iteration-ccw', 'refresh', 'waypoints', 'git-branch', 'split', 'combine',
+  ]],
+  [/agent|bot|tool|react|api|call/i, [
+    'bot', 'wand', 'tool', 'server', 'plug', 'cable', 'unplug', 'server-cog', 'hard-drive', 'cpu',
+  ]],
+  [/human|escalat|support|user|use.?case/i, [
+    'users', 'handshake', 'phone', 'lightbulb', 'life-buoy', 'graduation-cap', 'megaphone', 'user', 'heart', 'thumbs-up',
+  ]],
+  [/cost|expensive|latency|budget|higher|dollar/i, [
+    'dollar', 'dollar-sign', 'timer', 'gauge', 'trending', 'calculator', 'wallet', 'percent', 'scale', 'weight',
+  ]],
+  [/capable|multi.?step|predict|complex|observ/i, [
+    'puzzle', 'brain', 'target', 'eye', 'microscope', 'radar', 'list-checks', 'clipboard-check', 'shield-check', 'history',
+  ]],
+  [/trade|versus|vs\b|power|bottleneck|fix|tune/i, [
+    'scale', 'chart', 'check-circle', 'sliders-horizontal', 'settings', 'wrench', 'equal', 'git-compare', 'toggle-left', 'sigma',
+  ]],
+  [/cancel|subscription|billing/i, ['ban', 'ticket', 'wallet', 'circle-x', 'circle-alert']],
+  [/document|docs|search|password|reset|forgot|shipping/i, [
+    'book', 'file', 'search', 'key', 'lock', 'package', 'truck', 'ship', 'shopping-bag', 'tag',
+  ]],
+  [/database|query|db|server/i, ['database', 'server', 'cpu', 'hard-drive', 'database-zap', 'binary']],
+  [/clarif|question|ask|when/i, ['help', 'message', 'mic', 'info', 'circle-alert', 'languages']],
+  [/security|guard/i, ['shield', 'lock', 'eye', 'shield-check', 'fingerprint', 'lock-open']],
+  [/future|tool.?use|research|dynamic/i, [
+    'rocket', 'sparkles', 'wand', 'sprout', 'flask', 'microscope', 'telescope', 'leaf', 'flame', 'orbit',
+  ]],
+  [/good|useful|check|solved/i, [
+    'check-circle', 'circle-check', 'thumbs-up', 'award', 'trophy', 'sparkle', 'shield-check',
+  ]],
+  [/irrelevant|poor|fail|error/i, ['circle-x', 'ban', 'warning', 'circle-alert', 'bug', 'trash']],
 ];
 
 const VARIANT_FALLBACKS: Record<IconVariant, string[]> = {
-  ui: ['layers', 'workflow', 'sparkles', 'search', 'brain', 'shield', 'gauge', 'database'],
-  motion: ['network', 'compass', 'activity', 'route', 'puzzle', 'radar', 'target', 'package'],
-  sketch: ['pen', 'lightbulb', 'map', 'flag', 'bookmark', 'compass', 'atom', 'palette'],
+  ui: [
+    'layers', 'workflow', 'sparkles', 'search', 'brain', 'shield', 'gauge', 'database',
+    'route', 'puzzle', 'compass', 'atom', 'flag', 'bookmark', 'lightbulb', 'pen',
+  ],
+  motion: [
+    'network', 'compass', 'activity', 'route', 'puzzle', 'radar', 'target', 'package',
+    'waypoints', 'orbit', 'telescope', 'sparkle', 'goal', 'milestone',
+  ],
+  sketch: [
+    'pen', 'lightbulb', 'map', 'flag', 'bookmark', 'compass', 'atom', 'palette',
+    'sparkle', 'orbit', 'goal', 'milestone', 'leaf', 'feather', 'diamond', 'gem',
+    'aperture', 'anchor', 'telescope', 'microscope', 'waypoints', 'sprout',
+  ],
 };
 
 const VARIANT_RULES: Record<IconVariant, [RegExp, string[]][]> = {
@@ -81,10 +148,15 @@ const VARIANT_RULES: Record<IconVariant, [RegExp, string[]][]> = {
 
 /** Remap weak explicit icons when step text gives stronger semantics. */
 const EXPLICIT_CONTEXT_REMAP: Record<string, { re: RegExp; icon: string }[]> = {
-  search: [{ re: /retriev|rag|vector|chunk|embed|similar|rerank/i, icon: 'binoculars' }],
-  brain: [{ re: /generat|llm|gpt|answer|stream|token/i, icon: 'sparkles' }],
+  search: [{ re: /retriev|rag|vector|chunk|embed|similar|rerank|quality/i, icon: 'binoculars' }],
+  brain: [{ re: /generat|llm|gpt|answer|stream|token|decides/i, icon: 'sparkles' }],
   nodes: [{ re: /determin|fixed|sequenc|pipeline/i, icon: 'workflow' }],
   workflow: [{ re: /determin|fixed|sequenc|predictable|hardcoded/i, icon: 'route' }],
+  target: [
+    { re: /optim|search|first/i, icon: 'goal' },
+    { re: /meaning|region|close/i, icon: 'locate' },
+    { re: /depend|next|action/i, icon: 'waypoints' },
+  ],
 };
 
 function hashSeed(seed: string): number {
@@ -94,14 +166,67 @@ function hashSeed(seed: string): number {
 }
 
 function normalizeIconName(name: string): string {
-  const key = name.trim().toLowerCase().replace(/\s+/g, '-');
-  return ICON_CATALOG[key] ? key : 'circle-dot';
+  const raw = name.trim().toLowerCase().replace(/\s+/g, '-');
+  const aliased = ICON_ALIASES[raw] ?? raw;
+  return ICON_CATALOG[aliased] ? aliased : 'circle-dot';
 }
 
 function pickCandidate(candidates: string[], seed: string, variant: IconVariant): string {
+  const valid = candidates.map(normalizeIconName).filter((n) => n !== 'circle-dot' || candidates.length === 1);
+  const pool = valid.length > 0 ? valid : candidates.map(normalizeIconName);
   const offset = variant === 'sketch' ? 3 : variant === 'motion' ? 7 : 0;
-  const idx = (hashSeed(seed) + offset) % candidates.length;
-  return normalizeIconName(candidates[idx] ?? 'circle-dot');
+  const idx = (hashSeed(seed) + offset) % pool.length;
+  return pool[idx] ?? 'circle-dot';
+}
+
+/** Ranked candidate list for a block (best semantic matches first). */
+export function collectIconCandidates(opts: ResolveIconOptions): string[] {
+  const variant = opts.variant ?? 'ui';
+  const seed = opts.seed ?? opts.textParts?.filter(Boolean).join(' ') ?? 'default';
+  const haystack = (opts.textParts ?? []).filter(Boolean).join(' ');
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  const push = (name: string) => {
+    const n = normalizeIconName(name);
+    if (seen.has(n)) return;
+    // Prefer not leading with the generic fallback.
+    if (n === 'circle-dot' && out.length > 0) return;
+    seen.add(n);
+    out.push(n);
+  };
+
+  if (typeof opts.explicit === 'string' && opts.explicit.trim()) {
+    const explicit = normalizeIconName(opts.explicit);
+    const remaps = EXPLICIT_CONTEXT_REMAP[explicit] ?? EXPLICIT_CONTEXT_REMAP[opts.explicit.trim().toLowerCase()];
+    if (remaps) {
+      for (const { re, icon } of remaps) {
+        if (re.test(haystack)) push(icon);
+      }
+    }
+    push(explicit);
+  }
+
+  for (const [re, candidates] of VARIANT_RULES[variant]) {
+    if (!re.test(haystack)) continue;
+    // Stable but varied order within the matched bucket.
+    const rotated = [...candidates];
+    const rot = hashSeed(seed) % Math.max(1, rotated.length);
+    for (let i = 0; i < rotated.length; i++) push(rotated[(i + rot) % rotated.length]!);
+  }
+
+  for (const fb of VARIANT_FALLBACKS[variant]) push(fb);
+
+  // Broad catalog tail so dense scenes still get unique glyphs.
+  const catalogOffset = hashSeed(`${seed}:catalog`) % ICON_NAMES.length;
+  for (let i = 0; i < ICON_NAMES.length; i++) {
+    const name = ICON_NAMES[(i + catalogOffset) % ICON_NAMES.length]!;
+    if (name === 'circle-dot' || name === 'circle') continue;
+    push(name);
+  }
+
+  if (out.length === 0) push('circle-dot');
+  return out;
 }
 
 export interface ResolveIconOptions {
@@ -109,6 +234,8 @@ export interface ResolveIconOptions {
   variant?: IconVariant;
   seed?: string;
   textParts?: (string | undefined)[];
+  /** Icons already claimed in this scene — skip them. */
+  used?: ReadonlySet<string>;
 }
 
 export function resolveIconName(
@@ -120,7 +247,10 @@ export function resolveIconName(
     explicitOrOptions &&
     typeof explicitOrOptions === 'object' &&
     !Array.isArray(explicitOrOptions) &&
-    ('variant' in explicitOrOptions || 'textParts' in explicitOrOptions || 'seed' in explicitOrOptions)
+    ('variant' in explicitOrOptions ||
+      'textParts' in explicitOrOptions ||
+      'seed' in explicitOrOptions ||
+      'used' in explicitOrOptions)
   ) {
     opts = explicitOrOptions as ResolveIconOptions;
   } else {
@@ -131,27 +261,30 @@ export function resolveIconName(
     };
   }
 
+  const candidates = collectIconCandidates(opts);
+  const used = opts.used;
+
+  // Prefer first unused semantic candidate (explicit / keyword rank).
+  for (const c of candidates) {
+    if (!used || !used.has(c)) return c;
+  }
+
   const variant = opts.variant ?? 'ui';
   const seed = opts.seed ?? opts.textParts?.filter(Boolean).join(' ') ?? 'default';
-  const haystack = (opts.textParts ?? []).filter(Boolean).join(' ');
+  return pickCandidate(candidates, seed, variant);
+}
 
-  if (typeof opts.explicit === 'string' && opts.explicit.trim()) {
-    const explicit = normalizeIconName(opts.explicit);
-    const remaps = EXPLICIT_CONTEXT_REMAP[explicit];
-    if (remaps) {
-      for (const { re, icon } of remaps) {
-        if (re.test(haystack)) return normalizeIconName(icon);
-      }
-    }
-    return explicit;
-  }
-
-  for (const [re, candidates] of VARIANT_RULES[variant]) {
-    if (re.test(haystack)) return pickCandidate(candidates, seed, variant);
-  }
-
-  const fallbacks = VARIANT_FALLBACKS[variant];
-  return pickCandidate(fallbacks, seed, variant);
+/** Per-scene allocator: semantic pick + unique icons within one render. */
+export function createSceneIconAllocator(variant: IconVariant = 'sketch') {
+  const used = new Set<string>();
+  return {
+    used,
+    resolve(opts: Omit<ResolveIconOptions, 'used' | 'variant'> & { variant?: IconVariant }): string {
+      const name = resolveIconName({ ...opts, variant: opts.variant ?? variant, used });
+      used.add(name);
+      return name;
+    },
+  };
 }
 
 export function iconSvg(name: string, size = 36, color = '#fb923c'): string {

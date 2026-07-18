@@ -25,6 +25,9 @@ import {
 import { maybeArchiveArtifact } from './archive.js';
 import { openProject, readArtifact, readSourceBrief, writeArtifact } from './project.js';
 import { readCourseContextForEpisode, assertEpisodeBuildAppGate } from './course.js';
+import { readEpisodeCodeBinding } from './build-app.js';
+import { enrichBuildAppPromptContext } from './build-app-context.js';
+import { resolveProductionPlanCode } from './code-map.js';
 import { reportProgress } from './progress.js';
 import {
   formatPlanLimitsTable,
@@ -287,12 +290,7 @@ async function buildVisualPlanContext(
   const sourceBrief = await readSourceBrief(projectPath);
   if (sourceBrief) context.sourceBrief = sourceBrief;
 
-  const courseCtx = await readCourseContextForEpisode(projectPath);
-  if (courseCtx.applicationState) context.applicationState = courseCtx.applicationState;
-  if (courseCtx.priorCoverage) context.priorCoverage = courseCtx.priorCoverage;
-  if (courseCtx.courseName) context.courseName = courseCtx.courseName;
-  if (courseCtx.episodeNumber) context.episodeNumber = courseCtx.episodeNumber;
-  if (courseCtx.episodeCodeAppendix) context.episodeCodeAppendix = courseCtx.episodeCodeAppendix;
+  await enrichBuildAppPromptContext(projectPath, 'visual-designer', context);
 
   return context;
 }
@@ -307,7 +305,25 @@ async function runVisualPlanStage(
   loadEnv();
 
   const parsed = await completeVisualPlan(projectPath, options);
-  const content = JSON.stringify(parsed, null, 2);
+  let finalPlan = parsed;
+
+  const courseCtx = await readCourseContextForEpisode(projectPath);
+  if (courseCtx.buildsApplication && courseCtx.appRepoPath) {
+    const binding = await readEpisodeCodeBinding(projectPath);
+    const { plan: resolved, filled, skipped } = await resolveProductionPlanCode(finalPlan, {
+      repoPath: courseCtx.appRepoPath,
+      gitCheckpoint: binding?.git_checkpoint,
+    });
+    finalPlan = resolved;
+    if (filled > 0 || skipped > 0) {
+      reportProgress({
+        stage: 'visual-plan',
+        message: `Code resolver: filled ${filled} scene(s) from repository${skipped ? `, ${skipped} skipped` : ''}`,
+      });
+    }
+  }
+
+  const content = JSON.stringify(finalPlan, null, 2);
   const outputFile = PRODUCTION_STAGE_OUTPUT['visual-plan'];
 
   await maybeArchiveArtifact(projectPath, outputFile, 'visual-plan');
@@ -325,7 +341,17 @@ async function runRenderAssetsStage(
   await assertProductionInputs(projectPath, stageId);
 
   const planRaw = await readArtifact(projectPath, ARTIFACTS.productionPlan);
-  const plan = ProductionPlanSchema.parse(JSON.parse(planRaw));
+  let plan = ProductionPlanSchema.parse(JSON.parse(planRaw));
+
+  const courseCtx = await readCourseContextForEpisode(projectPath);
+  if (courseCtx.buildsApplication && courseCtx.appRepoPath) {
+    const binding = await readEpisodeCodeBinding(projectPath);
+    const { plan: resolved } = await resolveProductionPlanCode(plan, {
+      repoPath: courseCtx.appRepoPath,
+      gitCheckpoint: binding?.git_checkpoint,
+    });
+    plan = resolved;
+  }
 
   const channelRaw = await readArtifact(projectPath, ARTIFACTS.channel);
   const channel = parseYamlFile(channelRaw, ChannelSchema);
